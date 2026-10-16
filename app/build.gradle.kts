@@ -1,3 +1,4 @@
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -16,6 +17,17 @@ android {
         versionName = "1.0"
     }
 
+    buildTypes {
+        debug {
+            isDebuggable = true
+        }
+
+        release {
+            isMinifyEnabled = false
+            isDebuggable = false
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -32,6 +44,7 @@ android {
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
+
     implementation(composeBom)
     androidTestImplementation(composeBom)
 
@@ -41,5 +54,6 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
