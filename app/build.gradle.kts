@@ -1,59 +1,130 @@
 
-plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
-}
+name: Build Morrow APK
 
-android {
-    namespace = "com.morrow.ai"
-    compileSdk = 35
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
 
-    defaultConfig {
-        applicationId = "com.morrow.ai"
-        minSdk = 24
-        targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
-    }
+permissions:
+  contents: read
 
-    buildTypes {
-        debug {
-            isDebuggable = true
-        }
+jobs:
+  build:
+    name: Build Morrow Android APKs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
 
-        release {
-            isMinifyEnabled = false
-            isDebuggable = false
-        }
-    }
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+      - name: Locate Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
 
-    buildFeatures {
-        compose = true
-    }
-}
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
 
-dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
+          if [[ ! -d "$SDK/build-tools" ]]; then
+            echo "::error::Android SDK Build Tools not found at $SDK"
+            exit 1
+          fi
 
-    implementation(composeBom)
-    androidTestImplementation(composeBom)
+          if [[ ! -d "$SDK/platforms/android-35" ]]; then
+            echo "::error::Android SDK platform 35 is missing."
+            echo "Installed platforms:"
+            ls -la "$SDK/platforms" || true
+            exit 1
+          fi
 
-    implementation("androidx.activity:activity-compose:1.10.0")
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+          BT="$(find "$SDK/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
 
-    debugImplementation("androidx.compose.ui:ui-tooling")
-}
+          if [[ -z "$BT" || ! -x "$BT/apksigner" || ! -x "$BT/zipalign" ]]; then
+            echo "::error::apksigner or zipalign was not found."
+            exit 1
+          fi
+
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "MORROW_BUILD_TOOLS=$BT" >> "$GITHUB_ENV"
+
+          echo "SDK: $SDK"
+          echo "Build tools: $BT"
+          "$BT/apksigner" version
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build debug and release APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon assembleDebug assembleRelease
+
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          test -s app/build/outputs/apk/release/app-release-unsigned.apk
+
+      - name: Sign release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          OUT="app/build/outputs/apk/release/app-release.apk"
+          KEYSTORE="$RUNNER_TEMP/morrow-release.jks"
+          ALIGNED="$RUNNER_TEMP/morrow-aligned.apk"
+          BT="$MORROW_BUILD_TOOLS"
+
+          STORE_PASS="$(openssl rand -hex 24)"
+          KEY_PASS="$(openssl rand -hex 24)"
+
+          keytool -genkeypair \
+            -noprompt \
+            -storetype JKS \
+            -keystore "$KEYSTORE" \
+            -storepass "$STORE_PASS" \
+            -keypass "$KEY_PASS" \
+            -alias morrow \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Morrow, O=Morrow"
+
+          "$BT/zipalign" -f -p 4 "$APK" "$ALIGNED"
+
+          "$BT/apksigner" sign \
+            --ks "$KEYSTORE" \
+            --ks-key-alias morrow \
+            --ks-pass "pass:$STORE_PASS" \
+            --key-pass "pass:$KEY_PASS" \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --out "$OUT" \
+            "$ALIGNED"
+
+          "$BT/apksigner" verify --verbose "$OUT"
+          test -s "$OUT"
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Morrow-debug-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload signed release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Morrow-release-APK
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
