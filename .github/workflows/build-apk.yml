@@ -3,73 +3,169 @@ name: Build Morrow APK
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: morrow-apk-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
+    name: Build and Sign Android APKs
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Set up Java
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            platform-tools
+            platforms;android-35
+            build-tools;35.0.0
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+          cache-read-only: false
 
-      - name: Build debug and release APKs
-        run: gradle assembleDebug assembleRelease
-
-      - name: Sign release APK
-        env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+      - name: Verify build environment
+        shell: bash
         run: |
           set -euo pipefail
 
+          echo "Java version:"
+          java -version
+
+          echo "Gradle version:"
+          gradle --version
+
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+
+          if [[ -z "$SDK" || ! -d "$SDK/build-tools" ]]; then
+            for candidate in \
+              "/usr/local/lib/android/sdk" \
+              "/opt/android-sdk"
+            do
+              if [[ -d "$candidate/build-tools" ]]; then
+                SDK="$candidate"
+                break
+              fi
+            done
+          fi
+
+          if [[ -z "$SDK" || ! -d "$SDK/build-tools" ]]; then
+            echo "::error::Android SDK Build Tools directory was not found."
+            echo "ANDROID_HOME=${ANDROID_HOME:-unset}"
+            echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-unset}"
+            exit 1
+          fi
+
+          echo "Android SDK: $SDK"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+
+          test -x "$SDK/build-tools/35.0.0/apksigner"
+          test -x "$SDK/build-tools/35.0.0/zipalign"
+
+          echo "Android SDK tools verified successfully."
+
+      - name: Build debug and release APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --stacktrace assembleDebug assembleRelease
+
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          test -s app/build/outputs/apk/release/app-release-unsigned.apk
+
+          echo "Both APK builds completed successfully."
+
+      - name: Sign release APK
+        shell: bash
+        env:
+          MORROW_KEYSTORE_BASE64: ${{ secrets.MORROW_KEYSTORE_BASE64 }}
+          MORROW_KEYSTORE_PASSWORD: ${{ secrets.MORROW_KEYSTORE_PASSWORD }}
+          MORROW_KEY_PASSWORD: ${{ secrets.MORROW_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          SDK="${ANDROID_HOME}/build-tools/35.0.0"
           APK="app/build/outputs/apk/release/app-release-unsigned.apk"
-          SDK="${ANDROID_HOME}/build-tools"
-          APKSIGNER="$(find "$SDK" -name apksigner -type f | sort -V | tail -n 1)"
-          ZIPALIGN="$(find "$SDK" -name zipalign -type f | sort -V | tail -n 1)"
-
-          test -f "$APK"
-          test -n "$APKSIGNER"
-          test -n "$ZIPALIGN"
-
+          OUT="app/build/outputs/apk/release/app-release.apk"
           KEYSTORE="$RUNNER_TEMP/morrow-release.jks"
+          ALIGNED="$RUNNER_TEMP/morrow-aligned.apk"
 
-          keytool -genkeypair \
-            -keystore "$KEYSTORE" \
-            -storepass "${{ secrets.MORROW_KEYSTORE_PASSWORD }}" \
-            -keypass "${{ secrets.MORROW_KEY_PASSWORD }}" \
-            -alias morrow \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=Morrow, O=Morrow"
+          test -s "$APK"
+          test -x "$SDK/apksigner"
+          test -x "$SDK/zipalign"
 
-          "$ZIPALIGN" -f -p 4 "$APK" "$RUNNER_TEMP/morrow-aligned.apk"
+          if [[ -n "${MORROW_KEYSTORE_BASE64:-}" ]]; then
+            if [[ -z "${MORROW_KEYSTORE_PASSWORD:-}" ||
+                  -z "${MORROW_KEY_PASSWORD:-}" ]]; then
+              echo "::error::Configure both keystore and key passwords."
+              exit 1
+            fi
 
-          "$APKSIGNER" sign \
+            printf '%s' "$MORROW_KEYSTORE_BASE64" |
+              base64 --decode > "$KEYSTORE"
+
+            test -s "$KEYSTORE"
+            STORE_PASS="$MORROW_KEYSTORE_PASSWORD"
+            KEY_PASS="$MORROW_KEY_PASSWORD"
+
+            echo "Using the saved Morrow signing key."
+          else
+            echo "::warning::No persistent signing key is configured."
+            echo "::warning::This build gets a temporary key; future updates may require uninstalling the previous app."
+
+            STORE_PASS="$(openssl rand -hex 24)"
+            KEY_PASS="$(openssl rand -hex 24)"
+
+            keytool -genkeypair \
+              -noprompt \
+              -storetype JKS \
+              -keystore "$KEYSTORE" \
+              -storepass "$STORE_PASS" \
+              -keypass "$KEY_PASS" \
+              -alias morrow \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Morrow, O=Morrow"
+          fi
+
+          "$SDK/zipalign" -f -p 4 "$APK" "$ALIGNED"
+
+          "$SDK/apksigner" sign \
             --ks "$KEYSTORE" \
             --ks-key-alias morrow \
-            --ks-pass "pass:${{ secrets.MORROW_KEYSTORE_PASSWORD }}" \
-            --key-pass "pass:${{ secrets.MORROW_KEY_PASSWORD }}" \
-            --out app/build/outputs/apk/release/app-release.apk \
-            "$RUNNER_TEMP/morrow-aligned.apk"
+            --ks-pass "pass:$STORE_PASS" \
+            --key-pass "pass:$KEY_PASS" \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --out "$OUT" \
+            "$ALIGNED"
 
-          "$APKSIGNER" verify --verbose \
-            app/build/outputs/apk/release/app-release.apk
+          "$SDK/apksigner" verify --verbose "$OUT"
+
+          test -s "$OUT"
+          echo "Signed release APK created successfully."
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
@@ -77,6 +173,7 @@ jobs:
           name: Morrow-debug-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 14
 
       - name: Upload signed release APK
         uses: actions/upload-artifact@v4
@@ -84,3 +181,4 @@ jobs:
           name: Morrow-release-APK
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+          retention-days: 14
