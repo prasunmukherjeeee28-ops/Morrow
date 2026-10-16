@@ -28,42 +28,59 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Build debug APK
-        run: gradle assembleDebug
+      - name: Build debug and release APKs
+        run: gradle assembleDebug assembleRelease
 
-      - name: Verify APK signature and manifest
-        shell: bash
+      - name: Sign release APK
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
         run: |
           set -euo pipefail
 
-          APK="app/build/outputs/apk/debug/app-debug.apk"
+          APK="app/build/outputs/apk/release/app-release-unsigned.apk"
           SDK="${ANDROID_HOME}/build-tools"
-
           APKSIGNER="$(find "$SDK" -name apksigner -type f | sort -V | tail -n 1)"
-          AAPT="$(find "$SDK" -name aapt -type f | sort -V | tail -n 1)"
+          ZIPALIGN="$(find "$SDK" -name zipalign -type f | sort -V | tail -n 1)"
 
           test -f "$APK"
           test -n "$APKSIGNER"
-          test -n "$AAPT"
+          test -n "$ZIPALIGN"
 
-          "$APKSIGNER" verify --verbose --print-certs "$APK"
-          "$AAPT" dump badging "$APK" | head -n 8
+          KEYSTORE="$RUNNER_TEMP/morrow-release.jks"
 
-          sha256sum "$APK"
+          keytool -genkeypair \
+            -keystore "$KEYSTORE" \
+            -storepass "${{ secrets.MORROW_KEYSTORE_PASSWORD }}" \
+            -keypass "${{ secrets.MORROW_KEY_PASSWORD }}" \
+            -alias morrow \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Morrow, O=Morrow"
 
-      - name: Upload APK
+          "$ZIPALIGN" -f -p 4 "$APK" "$RUNNER_TEMP/morrow-aligned.apk"
+
+          "$APKSIGNER" sign \
+            --ks "$KEYSTORE" \
+            --ks-key-alias morrow \
+            --ks-pass "pass:${{ secrets.MORROW_KEYSTORE_PASSWORD }}" \
+            --key-pass "pass:${{ secrets.MORROW_KEY_PASSWORD }}" \
+            --out app/build/outputs/apk/release/app-release.apk \
+            "$RUNNER_TEMP/morrow-aligned.apk"
+
+          "$APKSIGNER" verify --verbose \
+            app/build/outputs/apk/release/app-release.apk
+
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: Morrow-debug-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
-      - name: Upload build diagnostics
-        if: always()
+      - name: Upload signed release APK
         uses: actions/upload-artifact@v4
         with:
-          name: Morrow-build-diagnostics
-          path: |
-            app/build/outputs/apk/debug/output-metadata.json
-            app/build/outputs/logs/
-          if-no-files-found: ignore
+          name: Morrow-release-APK
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
