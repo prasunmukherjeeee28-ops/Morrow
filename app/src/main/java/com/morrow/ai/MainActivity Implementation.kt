@@ -66,7 +66,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URL
 
 // ==========================================
 // MORROW DESIGN SYSTEM & COLOR PALETTE
@@ -78,6 +85,9 @@ private val MorrowAccent = Color(0xFFA855F7)
 private val MorrowTextPrimary = Color(0xFFF5EEFF)
 private val MorrowTextSecondary = Color(0xFFB8AEC9)
 private val MorrowBorder = Color(0xFF3B2E52)
+
+// Set your Gemini API key here
+private const val GEMINI_API_KEY = "AQ.Ab8RN6LQGY_fktEYzu4HrPlDctQ1DAwqnjSgE_kDEKXgLuh8fw"
 
 private val MorrowColorScheme = darkColorScheme(
     background = MorrowBackground,
@@ -119,9 +129,10 @@ class MainActivity : ComponentActivity() {
 fun MorrowMainScreen() {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
-    var selectedModel by remember { mutableStateOf("Morrow Core") }
+    var selectedModel by remember { mutableStateOf("gemini-2.5-flash") }
     var input by remember { mutableStateOf("") }
-    
+    var isLoading by remember { mutableStateOf(false) }
+
     val conversations = remember {
         mutableStateListOf(ConversationSession("welcome", "Welcome to Morrow"))
     }
@@ -130,7 +141,7 @@ fun MorrowMainScreen() {
             "welcome" to listOf(
                 ChatMessage(
                     "welcome-message", 
-                    "Welcome to Morrow.\n\nA calmer space to think, create, and build. Your AI connection isn't set up yet, so replies are currently in demo mode.", 
+                    "Welcome to Morrow.\n\nConnected to Gemini 2.5 Flash API. Ask me anything!", 
                     MessageSender.ASSISTANT
                 )
             )
@@ -166,7 +177,6 @@ fun MorrowMainScreen() {
                         .padding(horizontal = 16.dp)
                         .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 16.dp)
                 ) {
-                    // Header Branding
                     Row(
                         verticalAlignment = Alignment.CenterVertically, 
                         modifier = Modifier.padding(bottom = 24.dp)
@@ -179,7 +189,6 @@ fun MorrowMainScreen() {
                         }
                     }
                     
-                    // New Chat Button
                     Row(
                         Modifier
                             .fillMaxWidth()
@@ -202,7 +211,6 @@ fun MorrowMainScreen() {
                         modifier = Modifier.padding(top = 28.dp, bottom = 10.dp, start = 4.dp)
                     )
 
-                    // Recent History List
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.weight(1f)) {
                         items(conversations, key = { it.id }) { chat ->
                             val isActive = chat.id == activeId
@@ -235,7 +243,6 @@ fun MorrowMainScreen() {
                         }
                     }
 
-                    // Drawer Footer
                     Row(
                         verticalAlignment = Alignment.CenterVertically, 
                         modifier = Modifier
@@ -254,7 +261,7 @@ fun MorrowMainScreen() {
                         Spacer(Modifier.width(10.dp))
                         Column {
                             Text("Morrow", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                            Text("Local interface preview", fontSize = 11.sp, color = MorrowTextSecondary)
+                            Text("Gemini API Integrated", fontSize = 11.sp, color = MorrowTextSecondary)
                         }
                     }
                 }
@@ -267,7 +274,6 @@ fun MorrowMainScreen() {
                 .background(MorrowBackground)
                 .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding())
         ) {
-            // Top Navigation Bar
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -296,7 +302,7 @@ fun MorrowMainScreen() {
                         Icon(IconsCustom.ChevronDown, null, tint = MorrowTextSecondary, modifier = Modifier.size(15.dp))
                     }
                     DropdownMenu(expanded = modelMenu, onDismissRequest = { modelMenu = false }) {
-                        listOf("Morrow Core", "Provider not connected").forEach { model ->
+                        listOf("gemini-2.5-flash", "gemini-2.5-pro").forEach { model ->
                             DropdownMenuItem(
                                 text = { Text(model) }, 
                                 onClick = { selectedModel = model; modelMenu = false }
@@ -310,7 +316,6 @@ fun MorrowMainScreen() {
                 }
             }
 
-            // Main Body: Empty State vs Chat Stream
             if (messages.isEmpty()) {
                 Box(
                     Modifier
@@ -324,11 +329,11 @@ fun MorrowMainScreen() {
                         Spacer(Modifier.height(22.dp))
                         Text("What’s on your mind?", fontSize = 25.sp, fontWeight = FontWeight.Medium, color = MorrowTextPrimary)
                         Spacer(Modifier.height(8.dp))
-                        Text("A little clarity can change everything.", fontSize = 14.sp, color = MorrowTextSecondary)
+                        Text("Powered by Gemini API.", fontSize = 14.sp, color = MorrowTextSecondary)
                         Spacer(Modifier.height(26.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            SuggestionChip("Explain a concept") { input = "Explain a concept simply" }
-                            SuggestionChip("Help me create") { input = "Help me create something" }
+                            SuggestionChip("Explain quantum computing") { input = "Explain quantum computing in simple terms" }
+                            SuggestionChip("Write a code snippet") { input = "Write a simple Kotlin function" }
                         }
                     }
                 }
@@ -347,34 +352,38 @@ fun MorrowMainScreen() {
                 }
             }
 
-            // Composer Area
             MorrowComposer(
                 inputText = input,
+                isLoading = isLoading,
                 onTextChanged = { input = it },
                 onSend = {
-                    val text = input.trim()
-                    if (text.isNotEmpty()) {
-                        val existing = messagesByConversation[activeId].orEmpty().toMutableList()
-                        existing.add(ChatMessage("u${System.currentTimeMillis()}", text, MessageSender.USER))
-                        existing.add(
-                            ChatMessage(
-                                "a${System.currentTimeMillis() + 1}", 
-                                "I'm currently running in demo mode. The AI backend isn't connected yet, so I can't generate a real answer to that message.", 
-                                MessageSender.ASSISTANT
-                            )
-                        )
-                        messagesByConversation[activeId] = existing
+                    val userText = input.trim()
+                    if (userText.isNotEmpty() && !isLoading) {
+                        val currentList = messagesByConversation[activeId].orEmpty().toMutableList()
+                        currentList.add(ChatMessage("u_${System.currentTimeMillis()}", userText, MessageSender.USER))
+                        messagesByConversation[activeId] = currentList
+                        
                         val index = conversations.indexOfFirst { it.id == activeId }
                         if (index >= 0 && conversations[index].title == "New conversation") {
-                            conversations[index] = conversations[index].copy(title = text.take(32))
+                            conversations[index] = conversations[index].copy(title = userText.take(32))
                         }
+                        
                         input = ""
+                        isLoading = true
+
+                        scope.launch {
+                            val botReply = fetchGeminiResponse(selectedModel, userText)
+                            val updatedList = messagesByConversation[activeId].orEmpty().toMutableList()
+                            updatedList.add(ChatMessage("a_${System.currentTimeMillis()}", botReply, MessageSender.ASSISTANT))
+                            messagesByConversation[activeId] = updatedList
+                            isLoading = false
+                        }
                     }
                 }
             )
 
             Text(
-                "Morrow can make mistakes. Connect an AI provider to enable real responses.",
+                "Connected to Gemini API using current AQ key.",
                 color = MorrowTextSecondary.copy(alpha = 0.7f), 
                 fontSize = 10.sp,
                 modifier = Modifier
@@ -382,6 +391,59 @@ fun MorrowMainScreen() {
                     .padding(bottom = 8.dp),
                 textAlign = TextAlign.Center
             )
+        }
+    }
+}
+
+// ==========================================
+// GEMINI API CALL (Supports AQ. and AIza keys)
+// ==========================================
+private suspend fun fetchGeminiResponse(modelName: String, promptText: String): String {
+    return withContext(Dispatchers.IO) {
+        try {
+            val urlString = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent"
+            val url = URL(urlString)
+            val connection = url.openConnection() as HttpURLConnection
+            connection.requestMethod = "POST"
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.setRequestProperty("x-goog-api-key", GEMINI_API_KEY)
+            connection.doOutput = true
+            connection.connectTimeout = 15000
+            connection.readTimeout = 15000
+
+            val jsonBody = JSONObject().apply {
+                val textPart = JSONObject().put("text", promptText)
+                val partsArray = JSONArray().put(textPart)
+                val contentObj = JSONObject().put("parts", partsArray)
+                put("contents", JSONArray().put(contentObj))
+            }
+
+            OutputStreamWriter(connection.outputStream).use { writer ->
+                writer.write(jsonBody.toString())
+                writer.flush()
+            }
+
+            val statusCode = connection.responseCode
+            val responseStream = if (statusCode == 200) connection.inputStream else connection.errorStream
+            val responseText = responseStream.bufferedReader().use { it.readText() }
+
+            if (statusCode == 200) {
+                val root = JSONObject(responseText)
+                val candidates = root.optJSONArray("candidates")
+                if (candidates != null && candidates.length() > 0) {
+                    val candidate = candidates.getJSONObject(0)
+                    val content = candidate.optJSONObject("content")
+                    val parts = content?.optJSONArray("parts")
+                    if (parts != null && parts.length() > 0) {
+                        return@withContext parts.getJSONObject(0).optString("text", "No response generated.")
+                    }
+                }
+                "Empty response received."
+            } else {
+                "Error $statusCode: $responseText"
+            }
+        } catch (e: Exception) {
+            "Failed to send request: ${e.localizedMessage}"
         }
     }
 }
@@ -439,8 +501,6 @@ private fun MorrowMessageRow(message: ChatMessage) {
                 BrandMark(Modifier.size(25.dp))
                 Spacer(Modifier.width(9.dp))
                 Text("Morrow", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = MorrowTextPrimary)
-                Spacer(Modifier.width(8.dp))
-                Text("PREVIEW", fontSize = 9.sp, color = MorrowAccent, letterSpacing = 1.sp)
             }
             Text(
                 message.text, 
@@ -454,7 +514,12 @@ private fun MorrowMessageRow(message: ChatMessage) {
 }
 
 @Composable
-private fun MorrowComposer(inputText: String, onTextChanged: (String) -> Unit, onSend: () -> Unit) {
+private fun MorrowComposer(
+    inputText: String, 
+    isLoading: Boolean,
+    onTextChanged: (String) -> Unit, 
+    onSend: () -> Unit
+) {
     val navPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     Box(
@@ -473,12 +538,13 @@ private fun MorrowComposer(inputText: String, onTextChanged: (String) -> Unit, o
                 .padding(horizontal = 8.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = { /* Attachments coming soon */ }, modifier = Modifier.size(36.dp)) {
+            IconButton(onClick = { }, modifier = Modifier.size(36.dp)) {
                 Icon(IconsCustom.Plus, "Attachments", tint = MorrowTextSecondary, modifier = Modifier.size(19.dp))
             }
             BasicTextField(
                 value = inputText, 
                 onValueChange = onTextChanged,
+                enabled = !isLoading,
                 modifier = Modifier
                     .weight(1f)
                     .padding(horizontal = 8.dp),
@@ -486,31 +552,29 @@ private fun MorrowComposer(inputText: String, onTextChanged: (String) -> Unit, o
                 cursorBrush = SolidColor(MorrowAccent),
                 decorationBox = { inner ->
                     Box(contentAlignment = Alignment.CenterStart) {
-                        if (inputText.isEmpty()) Text("Message Morrow...", color = MorrowTextSecondary, fontSize = 15.sp)
+                        if (inputText.isEmpty()) Text(if (isLoading) "Thinking..." else "Message Morrow...", color = MorrowTextSecondary, fontSize = 15.sp)
                         inner()
                     }
                 }
             )
             IconButton(
                 onClick = onSend, 
-                enabled = inputText.isNotBlank(),
+                enabled = inputText.isNotBlank() && !isLoading,
                 modifier = Modifier
                     .size(38.dp)
                     .clip(CircleShape)
-                    .background(if (inputText.isNotBlank()) MorrowAccent else Color(0xFF33283F))
+                    .background(if (inputText.isNotBlank() && !isLoading) MorrowAccent else Color(0xFF33283F))
             ) {
                 Icon(
                     IconsCustom.Send, 
                     "Send message", 
-                    tint = if (inputText.isNotBlank()) Color.White else MorrowTextSecondary, 
+                    tint = if (inputText.isNotBlank() && !isLoading) Color.White else MorrowTextSecondary, 
                     modifier = Modifier.size(18.dp)
                 )
             }
         }
-    }
-}
 
-// ==========================================
+        // ==========================================
 // INLINE VECTOR ICONS
 // ==========================================
 private object IconsCustom {
@@ -559,4 +623,6 @@ private fun iconVector(name: String, draw: PathBuilder.() -> Unit): ImageVector 
             draw(this)
         }
     }.build()
+}
+    }
 }
