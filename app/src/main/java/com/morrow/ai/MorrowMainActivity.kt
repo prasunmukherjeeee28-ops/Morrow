@@ -1,12 +1,24 @@
 package com.morrow.ai
 
+import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateFloatAsState
+import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -14,6 +26,7 @@ import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -24,6 +37,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -42,12 +56,15 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -58,19 +75,27 @@ import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -93,20 +118,22 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -115,6 +142,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -133,8 +161,7 @@ private val MorrowBackground = Color(0xFF080A16)
 private val MorrowSurface = Color(0xFF111629)
 private val MorrowSurfaceRaised = Color(0xFF161C34)
 private val MorrowSidebar = Color(0xFF0B1020)
-private val MorrowAccent = Color(0xFFA78BFA)
-private val MorrowAccentStrong = Color(0xFF7C5CFF)
+private val MorrowAccentDefault = Color(0xFFA78BFA)
 private val MorrowVioletDeep = Color(0xFF4B2BD6)
 private val MorrowCoreLight = Color(0xFFE4DBFF)
 private val MorrowText = Color(0xFFF1F5FF)
@@ -144,12 +171,32 @@ private val MorrowSelected = Color(0xFF1E1A33)
 private val MorrowChipFill = Color(0xFF1A1534)
 private val MorrowChipBorder = Color(0xFF3B3170)
 private val MorrowCodeBg = Color(0xFF0A0D1F)
+private val MorrowDanger = Color(0xFFF87171)
+
+private val MorrowAccentChoices = listOf(
+    Color(0xFFA78BFA), // Violet
+    Color(0xFFFB7185), // Rose
+    Color(0xFFFBBF24), // Amber
+    Color(0xFF34D399)  // Emerald
+)
+private val MorrowAccentNames = listOf("Violet", "Rose", "Amber", "Emerald")
+
+private val LocalMorrowAccent = compositionLocalOf { MorrowAccentDefault }
 
 // The Gemini API key stays in Cloudflare Worker secrets, never inside this app.
 private const val MORROW_CHAT_ENDPOINT =
     "https://morrow-backend.prasunmukherjeeee28.workers.dev/chat"
 
 private val TwoPi = 2f * PI.toFloat()
+
+// ---------- Storage keys ----------
+
+private const val WELCOME_ID = "welcome"
+private const val PREFS_CHATS = "morrow_chats"
+private const val PREFS_SETTINGS = "morrow_settings"
+private const val KEY_CHATS_JSON = "chats_json"
+private const val KEY_LANDSCAPE = "landscape_on"
+private const val KEY_ACCENT = "accent_index"
 
 // ---------- Prompt marquee tuning ----------
 
@@ -201,6 +248,78 @@ data class MorrowConversationSession(
     val id: String,
     val title: String
 )
+
+private data class SavedState(
+    val conversations: List<MorrowConversationSession>,
+    val messages: Map<String, List<MorrowChatMessage>>,
+    val activeId: String
+)
+
+private fun defaultState() = SavedState(
+    conversations = listOf(MorrowConversationSession(WELCOME_ID, "New conversation")),
+    messages = mapOf(WELCOME_ID to emptyList()),
+    activeId = WELCOME_ID
+)
+
+private fun loadChats(context: Context): SavedState {
+    val raw = context.getSharedPreferences(PREFS_CHATS, Context.MODE_PRIVATE)
+        .getString(KEY_CHATS_JSON, null) ?: return defaultState()
+    return runCatching {
+        val root = JSONObject(raw)
+        val chats = root.getJSONArray("chats")
+        val conversations = mutableListOf<MorrowConversationSession>()
+        val messages = mutableMapOf<String, List<MorrowChatMessage>>()
+        for (i in 0 until chats.length()) {
+            val chat = chats.getJSONObject(i)
+            val id = chat.getString("id")
+            conversations += MorrowConversationSession(id, chat.getString("title"))
+            val array = chat.getJSONArray("messages")
+            messages[id] = (0 until array.length()).map { j ->
+                val m = array.getJSONObject(j)
+                MorrowChatMessage(
+                    id = m.getString("id"),
+                    text = m.getString("text"),
+                    sender = MorrowSender.valueOf(m.getString("sender"))
+                )
+            }
+        }
+        if (conversations.isEmpty()) return@runCatching defaultState()
+        val active = root.optString("active", conversations.first().id)
+        SavedState(
+            conversations = conversations,
+            messages = messages,
+            activeId = if (active in messages) active else conversations.first().id
+        )
+    }.getOrElse { defaultState() }
+}
+
+private fun saveChats(context: Context, state: SavedState) {
+    val chats = JSONArray()
+    state.conversations.forEach { conversation ->
+        val messages = JSONArray()
+        state.messages[conversation.id].orEmpty().forEach { m ->
+            messages.put(
+                JSONObject()
+                    .put("id", m.id)
+                    .put("text", m.text)
+                    .put("sender", m.sender.name)
+            )
+        }
+        chats.put(
+            JSONObject()
+                .put("id", conversation.id)
+                .put("title", conversation.title)
+                .put("messages", messages)
+        )
+    }
+    val root = JSONObject()
+        .put("active", state.activeId)
+        .put("chats", chats)
+    context.getSharedPreferences(PREFS_CHATS, Context.MODE_PRIVATE)
+        .edit()
+        .putString(KEY_CHATS_JSON, root.toString())
+        .apply()
+}
 
 // ---------- Time of day ----------
 
@@ -311,23 +430,23 @@ private fun currentClock(): MorrowClock {
     return MorrowClock(phase, time)
 }
 
-/** Animates every palette value so the sky, hills and sun/moon glide between phases. */
+/** Glides every palette value between phases, or snaps when animation is off. */
 @Composable
-private fun animatedPalette(target: SkyPalette): SkyPalette {
-    val colorSpec = tween<Color>(durationMillis = 2000, easing = FastOutSlowInEasing)
-    val floatSpec = tween<Float>(durationMillis = 2000, easing = FastOutSlowInEasing)
+private fun animatedPalette(target: SkyPalette, animate: Boolean): SkyPalette {
+    val colorSpec: AnimationSpec<Color> = if (animate) tween(2000, easing = FastOutSlowInEasing) else snap()
+    val floatSpec: AnimationSpec<Float> = if (animate) tween(2000, easing = FastOutSlowInEasing) else snap()
 
-    val skyTop by animateColorAsState(targetValue = target.skyTop, animationSpec = colorSpec, label = "skyTop")
-    val skyMid by animateColorAsState(targetValue = target.skyMid, animationSpec = colorSpec, label = "skyMid")
-    val skyBottom by animateColorAsState(targetValue = target.skyBottom, animationSpec = colorSpec, label = "skyBottom")
-    val hillFar by animateColorAsState(targetValue = target.hillFar, animationSpec = colorSpec, label = "hillFar")
-    val hillMid by animateColorAsState(targetValue = target.hillMid, animationSpec = colorSpec, label = "hillMid")
-    val hillNear by animateColorAsState(targetValue = target.hillNear, animationSpec = colorSpec, label = "hillNear")
-    val celestial by animateColorAsState(targetValue = target.celestial, animationSpec = colorSpec, label = "celestial")
-    val glow by animateColorAsState(targetValue = target.glow, animationSpec = colorSpec, label = "glow")
-    val celestialX by animateFloatAsState(targetValue = target.celestialX, animationSpec = floatSpec, label = "celestialX")
-    val celestialY by animateFloatAsState(targetValue = target.celestialY, animationSpec = floatSpec, label = "celestialY")
-    val starAlpha by animateFloatAsState(targetValue = target.starAlpha, animationSpec = floatSpec, label = "starAlpha")
+    val skyTop by animateColorAsState(target.skyTop, colorSpec, label = "skyTop")
+    val skyMid by animateColorAsState(target.skyMid, colorSpec, label = "skyMid")
+    val skyBottom by animateColorAsState(target.skyBottom, colorSpec, label = "skyBottom")
+    val hillFar by animateColorAsState(target.hillFar, colorSpec, label = "hillFar")
+    val hillMid by animateColorAsState(target.hillMid, colorSpec, label = "hillMid")
+    val hillNear by animateColorAsState(target.hillNear, colorSpec, label = "hillNear")
+    val celestial by animateColorAsState(target.celestial, colorSpec, label = "celestial")
+    val glow by animateColorAsState(target.glow, colorSpec, label = "glow")
+    val celestialX by animateFloatAsState(target.celestialX, floatSpec, label = "celestialX")
+    val celestialY by animateFloatAsState(target.celestialY, floatSpec, label = "celestialY")
+    val starAlpha by animateFloatAsState(target.starAlpha, floatSpec, label = "starAlpha")
 
     return SkyPalette(
         skyTop = skyTop,
@@ -353,7 +472,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme(
                 colorScheme = darkColorScheme(
-                    primary = MorrowAccent,
+                    primary = MorrowAccentDefault,
                     background = MorrowBackground,
                     surface = MorrowSurface,
                     onBackground = MorrowText,
@@ -371,14 +490,35 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// ---------- Main screen ----------
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MorrowMainScreen() {
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val settingsPrefs = remember { context.getSharedPreferences(PREFS_SETTINGS, Context.MODE_PRIVATE) }
+
+    var landscapeOn by remember { mutableStateOf(settingsPrefs.getBoolean(KEY_LANDSCAPE, true)) }
+    var accentIndex by remember { mutableIntStateOf(settingsPrefs.getInt(KEY_ACCENT, 0)) }
+    val accent = MorrowAccentChoices[accentIndex.coerceIn(0, MorrowAccentChoices.lastIndex)]
+
+    var showSettings by remember { mutableStateOf(false) }
+    var showClearDialog by remember { mutableStateOf(false) }
     var input by remember { mutableStateOf("") }
     var searchText by remember { mutableStateOf("") }
     var searchVisible by remember { mutableStateOf(false) }
+
+    val saved = remember { loadChats(context) }
+    val conversations = remember {
+        mutableStateListOf<MorrowConversationSession>().also { it.addAll(saved.conversations) }
+    }
+    val messagesByConversation = remember {
+        mutableStateMapOf<String, List<MorrowChatMessage>>().also { it.putAll(saved.messages) }
+    }
+    var activeId by remember { mutableStateOf(saved.activeId) }
+    var loadingConversationIds by remember { mutableStateOf(setOf<String>()) }
 
     val clock by produceState(initialValue = currentClock()) {
         while (true) {
@@ -386,19 +526,20 @@ private fun MorrowMainScreen() {
             delay(30_000L)
         }
     }
-    val palette = animatedPalette(clock.phase.palette)
+    val palette = animatedPalette(clock.phase.palette, animate = landscapeOn)
 
-    val conversations = remember {
-        mutableStateListOf(MorrowConversationSession("welcome", "New conversation"))
-    }
-    val messagesByConversation = remember {
-        mutableStateMapOf<String, List<MorrowChatMessage>>("welcome" to emptyList())
-    }
-    var activeId by remember { mutableStateOf("welcome") }
-    var loadingConversationIds by remember { mutableStateOf(setOf<String>()) }
     val currentMessages = messagesByConversation[activeId].orEmpty()
     val isLoading = activeId in loadingConversationIds
     val listState = rememberLazyListState()
+    val voice = rememberVoiceInput { spoken ->
+        input = if (input.isBlank()) spoken else "$input $spoken"
+    }
+
+    // Persist every change to conversations, messages, or the active chat.
+    LaunchedEffect(conversations.toList(), messagesByConversation.toMap(), activeId) {
+        val snapshot = SavedState(conversations.toList(), messagesByConversation.toMap(), activeId)
+        withContext(Dispatchers.IO) { saveChats(context, snapshot) }
+    }
 
     LaunchedEffect(activeId, currentMessages.size) {
         if (currentMessages.isNotEmpty()) {
@@ -414,17 +555,16 @@ private fun MorrowMainScreen() {
         input = ""
     }
 
-    fun sendMessage() {
-        val prompt = input.trim()
-        if (prompt.isBlank() || activeId in loadingConversationIds) return
-
+    fun sendPrompt(prompt: String) {
         val targetChatId = activeId
-        val oldMessages = messagesByConversation[targetChatId].orEmpty()
-        messagesByConversation[targetChatId] = oldMessages + MorrowChatMessage(
-            id = "user_${System.currentTimeMillis()}",
-            text = prompt,
-            sender = MorrowSender.USER
-        )
+        if (prompt.isBlank() || targetChatId in loadingConversationIds) return
+
+        messagesByConversation[targetChatId] = messagesByConversation[targetChatId].orEmpty() +
+            MorrowChatMessage(
+                id = "user_${System.currentTimeMillis()}",
+                text = prompt,
+                sender = MorrowSender.USER
+            )
 
         val conversationIndex = conversations.indexOfFirst { it.id == targetChatId }
         if (conversationIndex >= 0 && conversations[conversationIndex].title == "New conversation") {
@@ -433,193 +573,299 @@ private fun MorrowMainScreen() {
             )
         }
 
-        input = ""
         loadingConversationIds = loadingConversationIds + targetChatId
         scope.launch {
             val reply = fetchMorrowReply(prompt)
-            messagesByConversation[targetChatId] = messagesByConversation[targetChatId].orEmpty() +
-                MorrowChatMessage(
-                    id = "assistant_${System.currentTimeMillis()}",
-                    text = reply,
-                    sender = MorrowSender.ASSISTANT
-                )
+            // The chat may have been cleared while the request was running.
+            if (messagesByConversation.containsKey(targetChatId)) {
+                messagesByConversation[targetChatId] = messagesByConversation[targetChatId].orEmpty() +
+                    MorrowChatMessage(
+                        id = "assistant_${System.currentTimeMillis()}",
+                        text = reply,
+                        sender = MorrowSender.ASSISTANT
+                    )
+            }
             loadingConversationIds = loadingConversationIds - targetChatId
         }
     }
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        scrimColor = Color.Black.copy(alpha = 0.68f),
-        drawerContent = {
-            ModalDrawerSheet(
-                drawerContainerColor = MorrowSidebar,
-                drawerContentColor = MorrowText,
-                modifier = Modifier.width(300.dp)
-            ) {
+    fun sendInput() {
+        if (activeId in loadingConversationIds) return
+        val prompt = input.trim()
+        if (prompt.isBlank()) return
+        input = ""
+        sendPrompt(prompt)
+    }
+
+    /** Removes the last user message and everything after it, returning its text. */
+    fun takeLastPrompt(): String? {
+        val chatId = activeId
+        if (chatId in loadingConversationIds) return null
+        val messages = messagesByConversation[chatId].orEmpty()
+        val lastUser = messages.indexOfLast { it.sender == MorrowSender.USER }
+        if (lastUser < 0) return null
+        messagesByConversation[chatId] = messages.subList(0, lastUser).toList()
+        return messages[lastUser].text
+    }
+
+    fun regenerateLast() {
+        takeLastPrompt()?.let { sendPrompt(it) }
+    }
+
+    fun editLast() {
+        takeLastPrompt()?.let { input = it }
+    }
+
+    fun copyText(text: String) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Morrow reply", text))
+    }
+
+    fun shareText(text: String) {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        context.startActivity(Intent.createChooser(intent, "Share reply"))
+    }
+
+    fun clearAllChats() {
+        conversations.clear()
+        messagesByConversation.clear()
+        conversations.add(MorrowConversationSession(WELCOME_ID, "New conversation"))
+        messagesByConversation[WELCOME_ID] = emptyList()
+        activeId = WELCOME_ID
+        loadingConversationIds = emptySet()
+        input = ""
+    }
+
+    CompositionLocalProvider(LocalMorrowAccent provides accent) {
+        ModalNavigationDrawer(
+            drawerState = drawerState,
+            scrimColor = Color.Black.copy(alpha = 0.68f),
+            drawerContent = {
+                ModalDrawerSheet(
+                    drawerContainerColor = MorrowSidebar,
+                    drawerContentColor = MorrowText,
+                    modifier = Modifier.width(300.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .statusBarsPadding()
+                            .navigationBarsPadding()
+                            .padding(16.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            BrandMark(Modifier.size(38.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Column {
+                                Text("morrow", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = MorrowText)
+                                Text("YOUR SPACE TO THINK", fontSize = 9.sp, letterSpacing = 1.2.sp, color = MorrowMuted)
+                            }
+                            Spacer(Modifier.weight(1f))
+                            IconButton(onClick = { scope.launch { drawerState.close() } }) {
+                                CloseIcon(tint = MorrowMuted)
+                            }
+                        }
+
+                        Spacer(Modifier.height(24.dp))
+                        SidebarAction(icon = { PlusIcon(tint = accent) }, label = "New chat") {
+                            createNewChat()
+                            scope.launch { drawerState.close() }
+                        }
+                        Spacer(Modifier.height(7.dp))
+                        SidebarAction(icon = { SearchIcon(tint = accent) }, label = "Search chats") {
+                            searchVisible = !searchVisible
+                            searchText = ""
+                        }
+                        Spacer(Modifier.height(7.dp))
+                        SidebarAction(icon = { SliderIcon(tint = accent) }, label = "Settings") {
+                            showSettings = true
+                            scope.launch { drawerState.close() }
+                        }
+
+                        AnimatedVisibility(searchVisible) {
+                            OutlinedTextField(
+                                value = searchText,
+                                onValueChange = { searchText = it },
+                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                singleLine = true,
+                                placeholder = { Text("Search chat titles", color = MorrowMuted, fontSize = 13.sp) },
+                                shape = RoundedCornerShape(13.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = accent,
+                                    unfocusedBorderColor = MorrowBorder,
+                                    focusedTextColor = MorrowText,
+                                    unfocusedTextColor = MorrowText,
+                                    cursorColor = accent
+                                )
+                            )
+                        }
+                        Text(
+                            "RECENT CHATS",
+                            color = MorrowMuted,
+                            fontSize = 10.sp,
+                            letterSpacing = 1.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(start = 4.dp, top = 25.dp, bottom = 10.dp)
+                        )
+                        LazyColumn(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            val filteredConversations = conversations.filter {
+                                it.title.contains(searchText, ignoreCase = true)
+                            }
+                            items(filteredConversations, key = { it.id }) { chat ->
+                                val selected = chat.id == activeId
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(11.dp))
+                                        .background(if (selected) MorrowSelected else Color.Transparent)
+                                        .clickable {
+                                            activeId = chat.id
+                                            input = ""
+                                            scope.launch { drawerState.close() }
+                                        }
+                                        .padding(horizontal = 11.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    ChatIcon(
+                                        modifier = Modifier.size(18.dp),
+                                        tint = if (selected) accent else MorrowMuted
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(
+                                        chat.title,
+                                        color = if (selected) MorrowText else MorrowMuted,
+                                        fontSize = 13.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                        HorizontalDivider(color = MorrowBorder)
+                        Spacer(Modifier.height(12.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(5.dp)) {
+                            BrandMark(Modifier.size(30.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Column {
+                                Text("Morrow AI", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MorrowText)
+                                Text("Connected through Worker", fontSize = 10.sp, color = MorrowMuted)
+                            }
+                        }
+                    }
+                }
+            }
+        ) {
+            if (showSettings) {
+                SettingsScreen(
+                    landscapeOn = landscapeOn,
+                    onLandscapeChange = {
+                        landscapeOn = it
+                        settingsPrefs.edit().putBoolean(KEY_LANDSCAPE, it).apply()
+                    },
+                    accentIndex = accentIndex,
+                    onAccentChange = {
+                        accentIndex = it
+                        settingsPrefs.edit().putInt(KEY_ACCENT, it).apply()
+                    },
+                    onClearChats = { showClearDialog = true },
+                    onBack = { showSettings = false }
+                )
+            } else {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .statusBarsPadding()
-                        .navigationBarsPadding()
-                        .padding(16.dp)
+                        .background(MorrowBackground)
+                        .imePadding()
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        BrandMark(Modifier.size(38.dp))
-                        Spacer(Modifier.width(10.dp))
-                        Column {
-                            Text("morrow", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = MorrowText)
-                            Text("YOUR SPACE TO THINK", fontSize = 9.sp, letterSpacing = 1.2.sp, color = MorrowMuted)
-                        }
-                        Spacer(Modifier.weight(1f))
-                        IconButton(onClick = { scope.launch { drawerState.close() } }) {
-                            CloseIcon(tint = MorrowMuted)
-                        }
-                    }
-
-                    Spacer(Modifier.height(24.dp))
-                    SidebarAction(
-                        icon = { PlusIcon(tint = MorrowAccent) },
-                        label = "New chat"
-                    ) {
-                        createNewChat()
-                        scope.launch { drawerState.close() }
-                    }
-                    Spacer(Modifier.height(7.dp))
-                    SidebarAction(
-                        icon = { SearchIcon(tint = MorrowAccent) },
-                        label = "Search chats"
-                    ) {
-                        searchVisible = !searchVisible
-                        searchText = ""
-                    }
-                    AnimatedVisibility(searchVisible) {
-                        OutlinedTextField(
-                            value = searchText,
-                            onValueChange = { searchText = it },
-                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                            singleLine = true,
-                            placeholder = { Text("Search chat titles", color = MorrowMuted, fontSize = 13.sp) },
-                            shape = RoundedCornerShape(13.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = MorrowAccent,
-                                unfocusedBorderColor = MorrowBorder,
-                                focusedTextColor = MorrowText,
-                                unfocusedTextColor = MorrowText,
-                                cursorColor = MorrowAccent
-                            )
-                        )
-                    }
-                    Text(
-                        "RECENT CHATS",
-                        color = MorrowMuted,
-                        fontSize = 10.sp,
-                        letterSpacing = 1.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(start = 4.dp, top = 25.dp, bottom = 10.dp)
+                    TopBar(
+                        onMenuClick = { scope.launch { drawerState.open() } },
+                        onNewChatClick = { createNewChat() }
                     )
-                    LazyColumn(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        val filteredConversations = conversations.filter {
-                            it.title.contains(searchText, ignoreCase = true)
-                        }
-                        items(filteredConversations, key = { it.id }) { chat ->
-                            val selected = chat.id == activeId
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(11.dp))
-                                    .background(if (selected) MorrowSelected else Color.Transparent)
-                                    .clickable {
-                                        activeId = chat.id
-                                        input = ""
-                                        scope.launch { drawerState.close() }
-                                    }
-                                    .padding(horizontal = 11.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                ChatIcon(
-                                    modifier = Modifier.size(18.dp),
-                                    tint = if (selected) MorrowAccent else MorrowMuted
+
+                    Crossfade(
+                        targetState = currentMessages.isEmpty(),
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        label = "chatArea"
+                    ) { isEmpty ->
+                        if (isEmpty) {
+                            WelcomeHero(
+                                clock = clock,
+                                palette = palette,
+                                animate = landscapeOn,
+                                onPromptClick = { input = it }
+                            )
+                        } else {
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                LandscapeBackdrop(
+                                    palette = palette,
+                                    animate = landscapeOn,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .graphicsLayer { alpha = 0.3f }
                                 )
-                                Spacer(Modifier.width(10.dp))
-                                Text(
-                                    chat.title,
-                                    color = if (selected) MorrowText else MorrowMuted,
-                                    fontSize = 13.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                MessageList(
+                                    messages = currentMessages,
+                                    isLoading = isLoading,
+                                    listState = listState,
+                                    loadingKey = "loading_$activeId",
+                                    onCopy = { copyText(it) },
+                                    onShare = { shareText(it) },
+                                    onRegenerate = { regenerateLast() },
+                                    onEdit = { editLast() }
                                 )
                             }
                         }
                     }
-                    HorizontalDivider(color = MorrowBorder)
-                    Spacer(Modifier.height(12.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(5.dp)) {
-                        BrandMark(Modifier.size(30.dp))
-                        Spacer(Modifier.width(10.dp))
-                        Column {
-                            Text("Morrow AI", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MorrowText)
-                            Text("Connected through Worker", fontSize = 10.sp, color = MorrowMuted)
-                        }
-                    }
+
+                    MorrowComposer(
+                        inputText = input,
+                        isLoading = isLoading,
+                        voice = voice,
+                        onTextChanged = { input = it },
+                        onSend = { sendInput() }
+                    )
+                    Text(
+                        "Morrow can make mistakes. Check important information.",
+                        color = MorrowMuted.copy(alpha = 0.7f),
+                        fontSize = 10.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, bottom = 5.dp)
+                    )
                 }
             }
         }
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MorrowBackground)
-                .imePadding()
-        ) {
-            TopBar(
-                onMenuClick = { scope.launch { drawerState.open() } },
-                onNewChatClick = { createNewChat() }
-            )
 
-            Crossfade(
-                targetState = currentMessages.isEmpty(),
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                label = "chatArea"
-            ) { isEmpty ->
-                if (isEmpty) {
-                    WelcomeHero(
-                        clock = clock,
-                        palette = palette,
-                        onPromptClick = { input = it }
+        if (showClearDialog) {
+            AlertDialog(
+                onDismissRequest = { showClearDialog = false },
+                containerColor = MorrowSurface,
+                title = { Text("Clear all chats?", color = MorrowText) },
+                text = {
+                    Text(
+                        "This deletes every conversation on this device. It can't be undone.",
+                        color = MorrowMuted
                     )
-                } else {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        LandscapeBackdrop(
-                            palette = palette,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer { alpha = 0.3f }
-                        )
-                        MessageList(
-                            messages = currentMessages,
-                            isLoading = isLoading,
-                            listState = listState,
-                            loadingKey = "loading_$activeId"
-                        )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        clearAllChats()
+                        showClearDialog = false
+                        showSettings = false
+                    }) {
+                        Text("Delete", color = MorrowDanger)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showClearDialog = false }) {
+                        Text("Cancel", color = MorrowMuted)
                     }
                 }
-            }
-
-            MorrowComposer(
-                inputText = input,
-                isLoading = isLoading,
-                onTextChanged = { input = it },
-                onSend = { sendMessage() }
-            )
-            Text(
-                "Morrow can make mistakes. Check important information.",
-                color = MorrowMuted.copy(alpha = 0.7f),
-                fontSize = 10.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, bottom = 5.dp)
             )
         }
     }
@@ -657,10 +903,12 @@ private fun TopBar(onMenuClick: () -> Unit, onNewChatClick: () -> Unit) {
 private fun WelcomeHero(
     clock: MorrowClock,
     palette: SkyPalette,
+    animate: Boolean,
     onPromptClick: (String) -> Unit
 ) {
+    val accent = LocalMorrowAccent.current
     Box(modifier = Modifier.fillMaxSize()) {
-        LandscapeBackdrop(palette = palette, modifier = Modifier.fillMaxSize())
+        LandscapeBackdrop(palette = palette, animate = animate, modifier = Modifier.fillMaxSize())
 
         Crossfade(
             targetState = clock.phase,
@@ -673,7 +921,7 @@ private fun WelcomeHero(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     phase.greeting,
-                    color = MorrowAccent,
+                    color = accent,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     letterSpacing = 0.6.sp
@@ -704,31 +952,48 @@ private fun WelcomeHero(
                 .padding(bottom = 18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            PromptMarqueeRow(
-                prompts = MarqueeRowOnePrompts,
-                reverse = false,
-                onPromptClick = onPromptClick
-            )
-            PromptMarqueeRow(
-                prompts = MarqueeRowTwoPrompts,
-                reverse = true,
-                onPromptClick = onPromptClick
-            )
-            PromptMarqueeRow(
-                prompts = MarqueeRowThreePrompts,
-                reverse = false,
-                onPromptClick = onPromptClick
-            )
+            PromptMarqueeRow(MarqueeRowOnePrompts, reverse = false, onPromptClick = onPromptClick)
+            PromptMarqueeRow(MarqueeRowTwoPrompts, reverse = true, onPromptClick = onPromptClick)
+            PromptMarqueeRow(MarqueeRowThreePrompts, reverse = false, onPromptClick = onPromptClick)
         }
     }
 }
 
-/**
- * Sky, stars, sun or moon, and three hill layers that drift at different speeds.
- * Colors come from the current time-of-day palette.
- */
+// ---------- Landscape ----------
+
+private data class Star(
+    val x: Float,
+    val y: Float,
+    val radiusDp: Float,
+    val brightness: Float,
+    val phase: Float
+)
+
+private val LandscapeStars: List<Star> by lazy {
+    val random = Random(7)
+    List(64) {
+        Star(
+            x = random.nextFloat(),
+            y = random.nextFloat() * 0.6f,
+            radiusDp = 0.6f + random.nextFloat() * 1.2f,
+            brightness = 0.4f + random.nextFloat() * 0.6f,
+            phase = random.nextFloat()
+        )
+    }
+}
+
+/** Static when animation is off: same colors, no drift or twinkle. */
 @Composable
-private fun LandscapeBackdrop(palette: SkyPalette, modifier: Modifier = Modifier) {
+private fun LandscapeBackdrop(palette: SkyPalette, animate: Boolean, modifier: Modifier = Modifier) {
+    if (animate) {
+        AnimatedLandscape(palette = palette, modifier = modifier)
+    } else {
+        Canvas(modifier = modifier) { drawLandscape(palette, drift = 0f, twinkle = 0f) }
+    }
+}
+
+@Composable
+private fun AnimatedLandscape(palette: SkyPalette, modifier: Modifier) {
     val transition = rememberInfiniteTransition(label = "landscape")
     val drift by transition.animateFloat(
         initialValue = 0f,
@@ -748,105 +1013,49 @@ private fun LandscapeBackdrop(palette: SkyPalette, modifier: Modifier = Modifier
         ),
         label = "twinkle"
     )
-    val stars = remember {
-        val random = Random(7)
-        List(64) {
-            Star(
-                x = random.nextFloat(),
-                y = random.nextFloat() * 0.6f,
-                radiusDp = 0.6f + random.nextFloat() * 1.2f,
-                brightness = 0.4f + random.nextFloat() * 0.6f,
-                phase = random.nextFloat()
-            )
-        }
-    }
-
-    Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
-
-        // Sky gradient.
-        drawRect(
-            brush = Brush.verticalGradient(
-                colors = listOf(palette.skyTop, palette.skyMid, palette.skyBottom),
-                startY = 0f,
-                endY = h
-            )
-        )
-
-        // Stars: visible at night, hidden in daylight.
-        if (palette.starAlpha > 0.01f) {
-            stars.forEach { star ->
-                val wave = 0.5f + 0.5f * sin(TwoPi * (twinkle + star.phase))
-                drawCircle(
-                    color = Color.White.copy(
-                        alpha = (0.25f + 0.75f * wave) * star.brightness * palette.starAlpha
-                    ),
-                    radius = star.radiusDp.dp.toPx(),
-                    center = Offset(w * star.x, h * star.y)
-                )
-            }
-        }
-
-        // Sun or moon with a soft glow.
-        val celestialCenter = Offset(w * palette.celestialX, h * palette.celestialY)
-        val celestialRadius = minOf(w, h) * (if (palette.celestialIsSun) 0.07f else 0.055f)
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(palette.glow.copy(alpha = 0.45f), palette.glow.copy(alpha = 0f)),
-                center = celestialCenter,
-                radius = celestialRadius * 4f
-            ),
-            radius = celestialRadius * 4f,
-            center = celestialCenter
-        )
-        drawCircle(
-            color = palette.celestial,
-            radius = celestialRadius,
-            center = celestialCenter
-        )
-
-        // Hills, far to near.
-        drawRidge(
-            drift = drift,
-            speed = 1,
-            k1 = 2,
-            k2 = 5,
-            baseY = 0.6f,
-            amplitude = 0.16f,
-            color = palette.hillFar,
-            alpha = 0.75f
-        )
-        drawRidge(
-            drift = drift,
-            speed = 2,
-            k1 = 3,
-            k2 = 7,
-            baseY = 0.72f,
-            amplitude = 0.13f,
-            color = palette.hillMid,
-            alpha = 1f
-        )
-        drawRidge(
-            drift = drift,
-            speed = 3,
-            k1 = 2,
-            k2 = 4,
-            baseY = 0.86f,
-            amplitude = 0.1f,
-            color = palette.hillNear,
-            alpha = 1f
-        )
-    }
+    Canvas(modifier = modifier) { drawLandscape(palette, drift, twinkle) }
 }
 
-private data class Star(
-    val x: Float,
-    val y: Float,
-    val radiusDp: Float,
-    val brightness: Float,
-    val phase: Float
-)
+private fun DrawScope.drawLandscape(palette: SkyPalette, drift: Float, twinkle: Float) {
+    val w = size.width
+    val h = size.height
+
+    drawRect(
+        brush = Brush.verticalGradient(
+            colors = listOf(palette.skyTop, palette.skyMid, palette.skyBottom),
+            startY = 0f,
+            endY = h
+        )
+    )
+
+    if (palette.starAlpha > 0.01f) {
+        LandscapeStars.forEach { star ->
+            val wave = 0.5f + 0.5f * sin(TwoPi * (twinkle + star.phase))
+            drawCircle(
+                color = Color.White.copy(alpha = (0.25f + 0.75f * wave) * star.brightness * palette.starAlpha),
+                radius = star.radiusDp.dp.toPx(),
+                center = Offset(w * star.x, h * star.y)
+            )
+        }
+    }
+
+    val celestialCenter = Offset(w * palette.celestialX, h * palette.celestialY)
+    val celestialRadius = minOf(w, h) * (if (palette.celestialIsSun) 0.07f else 0.055f)
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(palette.glow.copy(alpha = 0.45f), palette.glow.copy(alpha = 0f)),
+            center = celestialCenter,
+            radius = celestialRadius * 4f
+        ),
+        radius = celestialRadius * 4f,
+        center = celestialCenter
+    )
+    drawCircle(color = palette.celestial, radius = celestialRadius, center = celestialCenter)
+
+    drawRidge(drift, speed = 1, k1 = 2, k2 = 5, baseY = 0.6f, amplitude = 0.16f, color = palette.hillFar, alpha = 0.75f)
+    drawRidge(drift, speed = 2, k1 = 3, k2 = 7, baseY = 0.72f, amplitude = 0.13f, color = palette.hillMid, alpha = 1f)
+    drawRidge(drift, speed = 3, k1 = 2, k2 = 4, baseY = 0.86f, amplitude = 0.1f, color = palette.hillNear, alpha = 1f)
+}
 
 /**
  * One layer of hills. Each term is an integer number of waves across the width,
@@ -902,8 +1111,7 @@ private fun PromptMarqueeRow(
                 if (lastFrameNanos != 0L) {
                     val seconds = (frameNanos - lastFrameNanos) / 1_000_000_000f
                     val direction = if (reverse) -1f else 1f
-                    val step = speedPx * seconds * direction
-                    phasePx = wrapPhase(phasePx + step, setWidthPx)
+                    phasePx = wrapPhase(phasePx + speedPx * seconds * direction, setWidthPx)
                 }
                 lastFrameNanos = frameNanos
             }
@@ -932,11 +1140,7 @@ private fun PromptMarqueeRow(
                 onPromptClick = onPromptClick,
                 modifier = Modifier.onSizeChanged { setWidthPx = it.width.toFloat() }
             )
-            PromptChipSet(
-                prompts = prompts,
-                onPromptClick = onPromptClick,
-                modifier = Modifier
-            )
+            PromptChipSet(prompts = prompts, onPromptClick = onPromptClick, modifier = Modifier)
         }
     }
 }
@@ -952,10 +1156,7 @@ private fun PromptChipSet(
     onPromptClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         prompts.forEach { prompt ->
             PromptChip(prompt = prompt, onClick = { onPromptClick(prompt) })
             // Trailing gap is part of the set width so the loop period is exact.
@@ -966,6 +1167,7 @@ private fun PromptChipSet(
 
 @Composable
 private fun PromptChip(prompt: String, onClick: () -> Unit) {
+    val accent = LocalMorrowAccent.current
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(percent = 50))
@@ -975,12 +1177,7 @@ private fun PromptChip(prompt: String, onClick: () -> Unit) {
             .padding(horizontal = 16.dp, vertical = 10.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(MorrowAccent)
-            )
+            Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(accent))
             Spacer(Modifier.width(8.dp))
             Text(
                 prompt,
@@ -1000,16 +1197,31 @@ private fun MessageList(
     messages: List<MorrowChatMessage>,
     isLoading: Boolean,
     listState: LazyListState,
-    loadingKey: String
+    loadingKey: String,
+    onCopy: (String) -> Unit,
+    onShare: (String) -> Unit,
+    onRegenerate: () -> Unit,
+    onEdit: () -> Unit
 ) {
+    val lastUserIndex = messages.indexOfLast { it.sender == MorrowSender.USER }
+    val lastIndex = messages.lastIndex
+
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 18.dp, vertical = 22.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        items(messages, key = { it.id }) { chatMessage ->
-            MorrowMessageRow(chatMessage)
+        itemsIndexed(messages, key = { _, m -> m.id }) { index, chatMessage ->
+            MorrowMessageRow(
+                message = chatMessage,
+                canEdit = !isLoading && index == lastUserIndex,
+                canRegenerate = !isLoading && index == lastIndex && chatMessage.sender == MorrowSender.ASSISTANT,
+                onCopy = { onCopy(chatMessage.text) },
+                onShare = { onShare(chatMessage.text) },
+                onRegenerate = onRegenerate,
+                onEdit = onEdit
+            )
         }
         if (isLoading) {
             item(key = loadingKey) {
@@ -1020,8 +1232,17 @@ private fun MessageList(
 }
 
 @Composable
-private fun MorrowMessageRow(message: MorrowChatMessage) {
-    // Each new message fades and rises into place.
+private fun MorrowMessageRow(
+    message: MorrowChatMessage,
+    canEdit: Boolean,
+    canRegenerate: Boolean,
+    onCopy: () -> Unit,
+    onShare: () -> Unit,
+    onRegenerate: () -> Unit,
+    onEdit: () -> Unit
+) {
+    val accent = LocalMorrowAccent.current
+
     val entrance = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
         entrance.animateTo(1f, tween(durationMillis = 380, easing = FastOutSlowInEasing))
@@ -1036,24 +1257,23 @@ private fun MorrowMessageRow(message: MorrowChatMessage) {
             }
     ) {
         if (message.sender == MorrowSender.USER) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
                 Box(
                     modifier = Modifier
                         .widthIn(max = 300.dp)
                         .clip(RoundedCornerShape(20.dp))
                         .background(
                             Brush.linearGradient(
-                                colors = listOf(MorrowAccentStrong, MorrowVioletDeep)
+                                colors = listOf(accent, lerp(accent, Color.Black, 0.45f))
                             )
                         )
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
-                    Text(
-                        message.text,
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        lineHeight = 23.sp
-                    )
+                    Text(message.text, color = Color.White, fontSize = 15.sp, lineHeight = 23.sp)
+                }
+                if (canEdit) {
+                    Spacer(Modifier.height(6.dp))
+                    MessageAction(label = "Edit", onClick = onEdit)
                 }
             }
         } else {
@@ -1063,7 +1283,7 @@ private fun MorrowMessageRow(message: MorrowChatMessage) {
                     Spacer(Modifier.width(8.dp))
                     Text(
                         "Morrow",
-                        color = MorrowAccent,
+                        color = accent,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 12.sp,
                         letterSpacing = 0.5.sp
@@ -1080,13 +1300,38 @@ private fun MorrowMessageRow(message: MorrowChatMessage) {
                 ) {
                     MorrowMarkdown(text = message.text)
                 }
+                Row(
+                    modifier = Modifier.padding(top = 8.dp, start = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    MessageAction(label = "Copy", onClick = onCopy)
+                    MessageAction(label = "Share", onClick = onShare)
+                    if (canRegenerate) {
+                        MessageAction(label = "Regenerate", onClick = onRegenerate)
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
+private fun MessageAction(label: String, onClick: () -> Unit) {
+    val accent = LocalMorrowAccent.current
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(percent = 50))
+            .border(1.dp, MorrowBorder, RoundedCornerShape(percent = 50))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 5.dp)
+    ) {
+        Text(label, color = accent, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
 private fun ThinkingIndicator() {
+    val accent = LocalMorrowAccent.current
     val transition = rememberInfiniteTransition(label = "thinking")
     val phase by transition.animateFloat(
         initialValue = 0f,
@@ -1114,7 +1359,7 @@ private fun ThinkingIndicator() {
                             scaleY = 0.8f + 0.4f * wave
                         }
                         .clip(CircleShape)
-                        .background(MorrowAccent)
+                        .background(accent)
                 )
             }
         }
@@ -1152,11 +1397,7 @@ private fun MorrowMarkdown(text: String, modifier: Modifier = Modifier) {
         blocks.forEach { block ->
             when (block) {
                 is MdHeading -> MdHeadingBlock(block)
-                is MdParagraph -> InlineText(
-                    text = block.text,
-                    fontSize = 15.sp,
-                    lineHeight = 24.sp
-                )
+                is MdParagraph -> InlineText(text = block.text, fontSize = 15.sp, lineHeight = 24.sp)
                 is MdCode -> MdCodeBlock(block.language, block.code)
                 is MdQuote -> MdQuoteBlock(block.text)
                 is MdList -> MdListBlock(block.items)
@@ -1175,6 +1416,7 @@ private fun MorrowMarkdown(text: String, modifier: Modifier = Modifier) {
 
 @Composable
 private fun MdHeadingBlock(block: MdHeading) {
+    val accent = LocalMorrowAccent.current
     InlineText(
         text = block.text,
         fontSize = when (block.level) {
@@ -1185,12 +1427,13 @@ private fun MdHeadingBlock(block: MdHeading) {
         },
         lineHeight = 26.sp,
         fontWeight = FontWeight.Bold,
-        color = if (block.level <= 2) MorrowText else MorrowAccent
+        color = if (block.level <= 2) MorrowText else accent
     )
 }
 
 @Composable
 private fun MdCodeBlock(language: String, code: String) {
+    val accent = LocalMorrowAccent.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1201,7 +1444,7 @@ private fun MdCodeBlock(language: String, code: String) {
         if (language.isNotBlank()) {
             Text(
                 language.uppercase(),
-                color = MorrowAccent,
+                color = accent,
                 fontSize = 10.sp,
                 letterSpacing = 1.2.sp,
                 fontWeight = FontWeight.Bold,
@@ -1227,6 +1470,7 @@ private fun MdCodeBlock(language: String, code: String) {
 
 @Composable
 private fun MdQuoteBlock(text: String) {
+    val accent = LocalMorrowAccent.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1237,7 +1481,7 @@ private fun MdQuoteBlock(text: String) {
                 .width(3.dp)
                 .fillMaxHeight()
                 .clip(RoundedCornerShape(2.dp))
-                .background(MorrowAccent)
+                .background(accent)
         )
         Spacer(Modifier.width(12.dp))
         InlineText(
@@ -1252,6 +1496,7 @@ private fun MdQuoteBlock(text: String) {
 
 @Composable
 private fun MdListBlock(items: List<MdListItem>) {
+    val accent = LocalMorrowAccent.current
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         items.forEach { item ->
             Row(
@@ -1261,7 +1506,7 @@ private fun MdListBlock(items: List<MdListItem>) {
             ) {
                 Text(
                     if (item.ordered) "${item.number}." else "•",
-                    color = MorrowAccent,
+                    color = accent,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.width(22.dp)
@@ -1313,9 +1558,7 @@ private fun MdTableRow(cells: List<String>, background: Color, bold: Boolean) {
         cells.forEach { cell ->
             InlineText(
                 text = cell,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 4.dp),
+                modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
                 fontSize = 13.sp,
                 lineHeight = 19.sp,
                 fontWeight = if (bold) FontWeight.Bold else null
@@ -1324,7 +1567,7 @@ private fun MdTableRow(cells: List<String>, background: Color, bold: Boolean) {
     }
 }
 
-/** Text that renders markdown-style inline formatting into an AnnotatedString. */
+/** Text with inline markdown styling. Unknown syntax is shown literally. */
 @Composable
 private fun InlineText(
     text: String,
@@ -1334,8 +1577,9 @@ private fun InlineText(
     lineHeight: TextUnit = TextUnit.Unspecified,
     fontWeight: FontWeight? = null
 ) {
-    val annotated = remember(text) {
-        runCatching { buildInlineAnnotated(text) }.getOrElse { AnnotatedString(text) }
+    val accent = LocalMorrowAccent.current
+    val annotated = remember(text, accent) {
+        runCatching { buildInlineAnnotated(text, accent) }.getOrElse { AnnotatedString(text) }
     }
     Text(
         text = annotated,
@@ -1368,7 +1612,7 @@ private fun parseMarkdownBlocks(raw: String): List<MdBlock> {
                     codeLines += lines[i]
                     i++
                 }
-                i++ // skip the closing fence (or run past the end if unclosed)
+                i++ // skip the closing fence, or run past the end if unclosed
                 blocks += MdCode(language, codeLines.joinToString("\n"))
             }
 
@@ -1458,7 +1702,7 @@ private fun normalizeHtml(raw: String): String = raw
     .replace("&gt;", ">")
     .replace("&quot;", "\"")
     .replace("&amp;", "&")
-    
+
 private fun headingLevel(trimmed: String): Int {
     val level = trimmed.takeWhile { it == '#' }.length
     return if (level in 1..6 && trimmed.length > level && trimmed[level] == ' ') level else 0
@@ -1503,12 +1747,11 @@ private fun splitTableRow(line: String): List<String> =
         .split('|')
         .map { it.trim() }
 
-/** Converts markdown inline syntax into styled text. Unknown syntax is shown literally. */
-private fun buildInlineAnnotated(text: String): AnnotatedString = buildAnnotatedString {
-    appendInline(text, 0)
+private fun buildInlineAnnotated(text: String, accent: Color): AnnotatedString = buildAnnotatedString {
+    appendInline(text, 0, accent)
 }
 
-private fun androidx.compose.ui.text.AnnotatedString.Builder.appendInline(text: String, depth: Int) {
+private fun AnnotatedString.Builder.appendInline(text: String, depth: Int, accent: Color) {
     var i = 0
     val n = text.length
     while (i < n) {
@@ -1526,7 +1769,7 @@ private fun androidx.compose.ui.text.AnnotatedString.Builder.appendInline(text: 
                         SpanStyle(
                             fontFamily = FontFamily.Monospace,
                             background = MorrowCodeBg,
-                            color = MorrowAccent
+                            color = accent
                         )
                     ) {
                         append(text.substring(i + 1, end))
@@ -1543,7 +1786,7 @@ private fun androidx.compose.ui.text.AnnotatedString.Builder.appendInline(text: 
                 val end = text.indexOf(delimiter, i + 2)
                 if (end > i + 2 && depth < 4) {
                     withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                        appendInline(text.substring(i + 2, end), depth + 1)
+                        appendInline(text.substring(i + 2, end), depth + 1, accent)
                     }
                     i = end + 2
                 } else {
@@ -1556,7 +1799,7 @@ private fun androidx.compose.ui.text.AnnotatedString.Builder.appendInline(text: 
                 val end = text.indexOf("~~", i + 2)
                 if (end > i + 2 && depth < 4) {
                     withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) {
-                        appendInline(text.substring(i + 2, end), depth + 1)
+                        appendInline(text.substring(i + 2, end), depth + 1, accent)
                     }
                     i = end + 2
                 } else {
@@ -1569,7 +1812,7 @@ private fun androidx.compose.ui.text.AnnotatedString.Builder.appendInline(text: 
                 val end = text.indexOf(c, i + 1)
                 if (end > i + 1 && depth < 4) {
                     withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
-                        appendInline(text.substring(i + 1, end), depth + 1)
+                        appendInline(text.substring(i + 1, end), depth + 1, accent)
                     }
                     i = end + 1
                 } else {
@@ -1582,13 +1825,8 @@ private fun androidx.compose.ui.text.AnnotatedString.Builder.appendInline(text: 
                 val close = text.indexOf("](", i + 1)
                 val paren = if (close > 0) text.indexOf(')', close + 2) else -1
                 if (close > i && paren > close) {
-                    withStyle(
-                        SpanStyle(
-                            color = MorrowAccent,
-                            textDecoration = TextDecoration.Underline
-                        )
-                    ) {
-                        appendInline(text.substring(i + 1, close), depth + 1)
+                    withStyle(SpanStyle(color = accent, textDecoration = TextDecoration.Underline)) {
+                        appendInline(text.substring(i + 1, close), depth + 1, accent)
                     }
                     i = paren + 1
                 } else {
@@ -1604,25 +1842,98 @@ private fun androidx.compose.ui.text.AnnotatedString.Builder.appendInline(text: 
         }
     }
 }
+
+// ---------- Voice input ----------
+
+private class VoiceInputController(
+    val available: Boolean,
+    val listening: Boolean,
+    val toggle: () -> Unit
+)
+
+@Composable
+private fun rememberVoiceInput(onResult: (String) -> Unit): VoiceInputController {
+    val context = LocalContext.current
+    val available = remember { SpeechRecognizer.isRecognitionAvailable(context) }
+    var listening by remember { mutableStateOf(false) }
+    val currentOnResult by rememberUpdatedState(onResult)
+    val recognizer = remember(available) {
+        if (available) SpeechRecognizer.createSpeechRecognizer(context) else null
+    }
+
+    DisposableEffect(recognizer) {
+        recognizer?.setRecognitionListener(object : RecognitionListener {
+            override fun onReadyForSpeech(params: Bundle?) {}
+            override fun onBeginningOfSpeech() {}
+            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onBufferReceived(buffer: ByteArray?) {}
+            override fun onEndOfSpeech() { listening = false }
+            override fun onError(error: Int) { listening = false }
+            override fun onPartialResults(partialResults: Bundle?) {}
+            override fun onEvent(eventType: Int, params: Bundle?) {}
+            override fun onResults(results: Bundle?) {
+                listening = false
+                results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    ?.firstOrNull()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { currentOnResult(it) }
+            }
+        })
+        onDispose { recognizer?.destroy() }
+    }
+
+    fun start() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        }
+        recognizer?.startListening(intent)
+        listening = true
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) start()
+    }
+
+    fun toggle() {
+        if (recognizer == null) return
+        if (listening) {
+            recognizer.stopListening()
+            listening = false
+            return
+        }
+        if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            start()
+        } else {
+            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    return VoiceInputController(available = available, listening = listening, toggle = { toggle() })
+}
+
 // ---------- Composer ----------
 
 @Composable
 private fun MorrowComposer(
     inputText: String,
     isLoading: Boolean,
+    voice: VoiceInputController,
     onTextChanged: (String) -> Unit,
     onSend: () -> Unit
 ) {
+    val accent = LocalMorrowAccent.current
     var focused by remember { mutableStateOf(false) }
     val canSend = inputText.isNotBlank() && !isLoading
 
     val borderColor by animateColorAsState(
-        targetValue = if (focused) MorrowAccent.copy(alpha = 0.85f) else MorrowBorder,
+        targetValue = if (focused) accent.copy(alpha = 0.85f) else MorrowBorder,
         animationSpec = tween(durationMillis = 250),
         label = "composerBorder"
     )
     val sendTint by animateColorAsState(
-        targetValue = if (canSend) MorrowAccent else Color(0xFF2A2440),
+        targetValue = if (canSend) accent else Color(0xFF2A2440),
         animationSpec = tween(durationMillis = 220),
         label = "sendTint"
     )
@@ -1651,12 +1962,16 @@ private fun MorrowComposer(
                 .padding(vertical = 8.dp)
                 .onFocusChanged { focused = it.isFocused },
             textStyle = TextStyle(color = MorrowText, fontSize = 15.sp, lineHeight = 21.sp),
-            cursorBrush = SolidColor(MorrowAccent),
+            cursorBrush = SolidColor(accent),
             decorationBox = { innerTextField ->
                 Box(contentAlignment = Alignment.CenterStart) {
                     if (inputText.isEmpty()) {
                         Text(
-                            if (isLoading) "Thinking…" else "Message Morrow…",
+                            when {
+                                voice.listening -> "Listening…"
+                                isLoading -> "Thinking…"
+                                else -> "Message Morrow…"
+                            },
                             color = MorrowMuted,
                             fontSize = 14.sp
                         )
@@ -1665,7 +1980,22 @@ private fun MorrowComposer(
                 }
             }
         )
-        Spacer(Modifier.width(8.dp))
+
+        if (voice.available) {
+            Spacer(Modifier.width(4.dp))
+            IconButton(
+                onClick = voice.toggle,
+                enabled = !isLoading,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(if (voice.listening) MorrowDanger.copy(alpha = 0.18f) else Color.Transparent)
+            ) {
+                MicIcon(tint = if (voice.listening) MorrowDanger else MorrowMuted, modifier = Modifier.size(20.dp))
+            }
+        }
+
+        Spacer(Modifier.width(4.dp))
         IconButton(
             onClick = onSend,
             enabled = canSend,
@@ -1683,6 +2013,144 @@ private fun MorrowComposer(
                 modifier = Modifier.size(20.dp)
             )
         }
+    }
+}
+
+// ---------- Settings ----------
+
+@Composable
+private fun SettingsScreen(
+    landscapeOn: Boolean,
+    onLandscapeChange: (Boolean) -> Unit,
+    accentIndex: Int,
+    onAccentChange: (Int) -> Unit,
+    onClearChats: () -> Unit,
+    onBack: () -> Unit
+) {
+    val accent = LocalMorrowAccent.current
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MorrowBackground)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                BackIcon(tint = MorrowText)
+            }
+            Text("Settings", color = MorrowText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+        ) {
+            SettingsSection(title = "Appearance") {
+                Text("Accent color", color = MorrowText, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    MorrowAccentChoices.forEachIndexed { index, color ->
+                        val selected = index == accentIndex
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(color)
+                                .border(
+                                    width = if (selected) 3.dp else 0.dp,
+                                    color = if (selected) MorrowText else Color.Transparent,
+                                    shape = CircleShape
+                                )
+                                .clickable { onAccentChange(index) }
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    MorrowAccentNames[accentIndex.coerceIn(0, MorrowAccentNames.lastIndex)],
+                    color = MorrowMuted,
+                    fontSize = 12.sp
+                )
+            }
+
+            SettingsSection(title = "Animation") {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Animated landscape", color = MorrowText, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            "Turn off to save battery. The sky still changes with the time of day.",
+                            color = MorrowMuted,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Switch(
+                        checked = landscapeOn,
+                        onCheckedChange = onLandscapeChange,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = accent,
+                            uncheckedThumbColor = MorrowMuted,
+                            uncheckedTrackColor = MorrowChipFill,
+                            uncheckedBorderColor = MorrowBorder
+                        )
+                    )
+                }
+            }
+
+            SettingsSection(title = "Chats") {
+                Text(
+                    "Clear all chats",
+                    color = MorrowDanger,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onClearChats)
+                        .padding(vertical = 4.dp)
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "Deletes every conversation saved on this device.",
+                    color = MorrowMuted,
+                    fontSize = 12.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 18.dp)) {
+        Text(
+            title.uppercase(),
+            color = MorrowMuted,
+            fontSize = 10.sp,
+            letterSpacing = 1.5.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(MorrowSurface)
+                .border(1.dp, MorrowBorder, RoundedCornerShape(16.dp))
+                .padding(16.dp),
+            content = content
+        )
     }
 }
 
@@ -1769,6 +2237,13 @@ private fun MenuIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: 
 }
 
 @Composable
+private fun BackIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
+    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
+        fracPolyline(color, stroke, 0.62f to 0.22f, 0.32f to 0.5f, 0.62f to 0.78f)
+    }
+}
+
+@Composable
 private fun CloseIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
     MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
         fracLine(color, stroke, 0.25f, 0.25f, 0.75f, 0.75f)
@@ -1812,6 +2287,19 @@ private fun SearchIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint
 }
 
 @Composable
+private fun SliderIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
+    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
+        val knob = size.minDimension * 0.1f
+        fracLine(color, stroke, 0.18f, 0.28f, 0.82f, 0.28f)
+        fracLine(color, stroke, 0.18f, 0.5f, 0.82f, 0.5f)
+        fracLine(color, stroke, 0.18f, 0.72f, 0.82f, 0.72f)
+        drawCircle(color, radius = knob, center = Offset(size.width * 0.66f, size.height * 0.28f))
+        drawCircle(color, radius = knob, center = Offset(size.width * 0.34f, size.height * 0.5f))
+        drawCircle(color, radius = knob, center = Offset(size.width * 0.6f, size.height * 0.72f))
+    }
+}
+
+@Composable
 private fun ChatIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
     MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
         drawRoundRect(
@@ -1826,11 +2314,43 @@ private fun ChatIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: 
 }
 
 @Composable
+private fun MicIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
+    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(size.width * 0.36f, size.height * 0.12f),
+            size = Size(size.width * 0.28f, size.height * 0.46f),
+            cornerRadius = CornerRadius(size.width * 0.14f),
+            style = stroke
+        )
+        drawArc(
+            color = color,
+            startAngle = 0f,
+            sweepAngle = 180f,
+            useCenter = false,
+            topLeft = Offset(size.width * 0.22f, size.height * 0.3f),
+            size = Size(size.width * 0.56f, size.height * 0.46f),
+            style = stroke
+        )
+        fracLine(color, stroke, 0.5f, 0.76f, 0.5f, 0.9f)
+    }
+}
+
+@Composable
 private fun ArrowUpIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
     MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
         fracLine(color, stroke, 0.5f, 0.84f, 0.5f, 0.18f)
         fracPolyline(color, stroke, 0.26f to 0.43f, 0.5f to 0.18f, 0.74f to 0.43f)
     }
+}
+
+// ---------- Helpers ----------
+
+private fun morrowGreeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
+    in 5..11 -> "Good morning"
+    in 12..16 -> "Good afternoon"
+    in 17..21 -> "Good evening"
+    else -> "Good night"
 }
 
 // ---------- Networking ----------
