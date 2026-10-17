@@ -4,9 +4,6 @@ package com.morrow.ai
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -25,15 +22,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 
 private val Bg = Color(0xFF100D18)
-private val SurfaceDark = Color(0xFF191421)
-private val SidebarColor = Color(0xFF17111F)
+private val Panel = Color(0xFF191421)
+private val Sidebar = Color(0xFF17111F)
 private val Purple = Color(0xFFA855F7)
 private val Lavender = Color(0xFFF5EEFF)
 private val Muted = Color(0xFFAA9CB9)
-private val BorderColor = Color(0xFF34273F)
+private val Border = Color(0xFF34273F)
 
 data class ChatMessage(
     val text: String,
@@ -53,7 +49,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MorrowScreen() {
     var sessions by remember {
@@ -63,206 +58,184 @@ fun MorrowScreen() {
     var nextId by remember { mutableIntStateOf(2) }
     var message by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
-    var searching by remember { mutableStateOf(false) }
+    var showSidebar by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
+    var showModels by remember { mutableStateOf(false) }
     var model by remember { mutableStateOf("Morrow Core") }
-    var modelMenu by remember { mutableStateOf(false) }
-    var moreMenu by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf(false) }
 
-    val drawerState = rememberDrawerState(DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
     val active = sessions.firstOrNull { it.id == activeId }
         ?: sessions.first()
 
     MaterialTheme(
         colorScheme = darkColorScheme(
             background = Bg,
-            surface = SurfaceDark,
+            surface = Panel,
             primary = Purple,
             onBackground = Lavender,
             onSurface = Lavender
         )
     ) {
-        ModalNavigationDrawer(
-            drawerState = drawerState,
-            drawerContainerColor = SidebarColor,
-            scrimColor = Color.Black.copy(alpha = 0.65f),
-            drawerContent = {
-                ModalDrawerSheet(
-                    drawerContainerColor = SidebarColor,
-                    drawerContentColor = Lavender,
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Bg)
+                .imePadding()
+        ) {
+            if (showSidebar) {
+                Column(
                     modifier = Modifier
                         .fillMaxHeight()
-                        .widthIn(max = 310.dp)
-                        .width(300.dp)
+                        .width(270.dp)
+                        .background(Sidebar)
+                        .statusBarsPadding()
+                        .navigationBarsPadding()
+                        .padding(14.dp)
                 ) {
-                    Column(
-                        Modifier
-                            .fillMaxSize()
-                            .statusBarsPadding()
-                            .navigationBarsPadding()
-                            .padding(16.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            BrandMark()
-                            Spacer(Modifier.width(10.dp))
-                            Text(
-                                "morrow",
-                                fontSize = 23.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(Modifier.weight(1f))
-                            IconButton(
-                                onClick = {
-                                    scope.launch {
-                                        drawerState.close()
-                                    }
-                                }
-                            ) {
-                                Text("×", fontSize = 27.sp, color = Muted)
-                            }
-                        }
-
-                        Spacer(Modifier.height(24.dp))
-
-                        SidebarAction("＋", "New chat") {
-                            val id = nextId++
-                            sessions = listOf(
-                                ChatSession(id, "New chat")
-                            ) + sessions
-                            activeId = id
-                            message = ""
-                            scope.launch { drawerState.close() }
-                        }
-
-                        Spacer(Modifier.height(8.dp))
-
-                        SidebarAction("⌕", "Search chats") {
-                            searching = !searching
-                            search = ""
-                        }
-
-                        AnimatedVisibility(searching) {
-                            OutlinedTextField(
-                                value = search,
-                                onValueChange = { search = it },
-                                placeholder = {
-                                    Text("Search history", color = Muted)
-                                },
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 8.dp),
-                                shape = RoundedCornerShape(14.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = Purple,
-                                    unfocusedBorderColor = BorderColor,
-                                    focusedTextColor = Lavender,
-                                    unfocusedTextColor = Lavender,
-                                    cursorColor = Purple
-                                )
-                            )
-                        }
-
-                        Spacer(Modifier.height(28.dp))
-
+                        BrandMark()
+                        Spacer(Modifier.width(10.dp))
                         Text(
-                            "YOUR CHATS",
-                            fontSize = 10.sp,
-                            letterSpacing = 1.5.sp,
-                            color = Muted,
-                            fontWeight = FontWeight.Bold
+                            "morrow",
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Lavender
                         )
-
-                        Spacer(Modifier.height(10.dp))
-
-                        LazyColumn(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement =
-                                Arrangement.spacedBy(5.dp)
-                        ) {
-                            val filtered = sessions.filter {
-                                it.title.contains(
-                                    search,
-                                    ignoreCase = true
-                                )
-                            }
-
-                            items(filtered, key = { it.id }) { chat ->
-                                val selected = chat.id == activeId
-
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(
-                                            if (selected)
-                                                Color(0xFF302044)
-                                            else Color.Transparent
-                                        )
-                                        .clickable {
-                                            activeId = chat.id
-                                            message = ""
-                                            scope.launch {
-                                                drawerState.close()
-                                            }
-                                        }
-                                        .padding(
-                                            horizontal = 12.dp,
-                                            vertical = 13.dp
-                                        ),
-                                    verticalAlignment =
-                                        Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        "◦",
-                                        color = if (selected)
-                                            Purple else Muted
-                                    )
-                                    Spacer(Modifier.width(10.dp))
-                                    Text(
-                                        chat.title,
-                                        fontSize = 13.sp,
-                                        color = if (selected)
-                                            Lavender else Muted,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                        }
-
-                        HorizontalDivider(color = BorderColor)
-
-                        Spacer(Modifier.height(12.dp))
-
-                        SidebarAction("⚙", "Settings") {
-                            scope.launch { drawerState.close() }
-                        }
-
+                        Spacer(Modifier.weight(1f))
                         Text(
-                            "MORROW PREVIEW",
-                            fontSize = 9.sp,
-                            letterSpacing = 1.5.sp,
+                            "×",
+                            fontSize = 25.sp,
                             color = Muted,
-                            modifier = Modifier.padding(
-                                start = 12.dp,
-                                top = 12.dp
+                            modifier = Modifier
+                                .clickable { showSidebar = false }
+                                .padding(6.dp)
+                        )
+                    }
+
+                    Spacer(Modifier.height(24.dp))
+
+                    SidebarAction("＋", "New chat") {
+                        val id = nextId++
+                        sessions = listOf(ChatSession(id, "New chat")) + sessions
+                        activeId = id
+                        message = ""
+                        notice = false
+                        showSidebar = false
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    SidebarAction("⌕", "Search chats") {
+                        showSearch = !showSearch
+                        search = ""
+                    }
+
+                    if (showSearch) {
+                        Spacer(Modifier.height(8.dp))
+                        TextField(
+                            value = search,
+                            onValueChange = { search = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = {
+                                Text("Search chats", color = Muted)
+                            },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Panel,
+                                unfocusedContainerColor = Panel,
+                                focusedIndicatorColor = Purple,
+                                unfocusedIndicatorColor = Border,
+                                focusedTextColor = Lavender,
+                                unfocusedTextColor = Lavender,
+                                cursorColor = Purple
                             )
                         )
                     }
+
+                    Spacer(Modifier.height(26.dp))
+
+                    Text(
+                        "YOUR CHATS",
+                        color = Muted,
+                        fontSize = 10.sp,
+                        letterSpacing = 1.5.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(Modifier.height(10.dp))
+
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        items(
+                            sessions.filter {
+                                it.title.contains(search, ignoreCase = true)
+                            },
+                            key = { it.id }
+                        ) { chat ->
+                            val selected = chat.id == activeId
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(11.dp))
+                                    .background(
+                                        if (selected) Color(0xFF302044)
+                                        else Color.Transparent
+                                    )
+                                    .clickable {
+                                        activeId = chat.id
+                                        message = ""
+                                        notice = false
+                                        showSidebar = false
+                                    }
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "◦",
+                                    color = Purple,
+                                    fontSize = 18.sp
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    chat.title,
+                                    color = if (selected) Lavender else Muted,
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = Border)
+                    Spacer(Modifier.height(12.dp))
+
+                    SidebarAction("⚙", "About Morrow") {
+                        notice = true
+                    }
+
+                    Text(
+                        "PREVIEW · CHAT HISTORY IS TEMPORARY",
+                        color = Muted,
+                        fontSize = 9.sp,
+                        letterSpacing = 0.7.sp,
+                        modifier = Modifier.padding(8.dp)
+                    )
                 }
             }
-        ) {
+
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .weight(1f)
+                    .fillMaxHeight()
                     .background(Bg)
-                    .imePadding()
             ) {
-                // Top bar
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -270,45 +243,39 @@ fun MorrowScreen() {
                         .padding(horizontal = 8.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(
-                        onClick = {
-                            scope.launch { drawerState.open() }
-                        }
-                    ) {
-                        Text("☰", fontSize = 21.sp, color = Lavender)
+                    HeaderAction("☰") {
+                        showSidebar = !showSidebar
                     }
 
                     Box {
                         Row(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(12.dp))
-                                .clickable { modelMenu = true }
-                                .padding(
-                                    horizontal = 9.dp,
-                                    vertical = 10.dp
-                                ),
+                                .clickable { showModels = true }
+                                .padding(horizontal = 8.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
                                 model,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 15.sp
+                                color = Lavender,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
                             )
-                            Spacer(Modifier.width(6.dp))
+                            Spacer(Modifier.width(5.dp))
                             Text("⌄", color = Muted)
                         }
 
                         DropdownMenu(
-                            expanded = modelMenu,
-                            onDismissRequest = { modelMenu = false },
-                            modifier = Modifier.background(SurfaceDark)
+                            expanded = showModels,
+                            onDismissRequest = { showModels = false },
+                            modifier = Modifier.background(Panel)
                         ) {
-                            listOf("Morrow Core", "Morrow Mini").forEach {
+                            listOf("Morrow Core", "Morrow Mini").forEach { name ->
                                 DropdownMenuItem(
-                                    text = { Text(it) },
+                                    text = { Text(name, color = Lavender) },
                                     onClick = {
-                                        model = it
-                                        modelMenu = false
+                                        model = name
+                                        showModels = false
                                     }
                                 )
                             }
@@ -317,50 +284,15 @@ fun MorrowScreen() {
 
                     Spacer(Modifier.weight(1f))
 
-                    IconButton(
-                        onClick = {
-                            val id = nextId++
-                            sessions = listOf(
-                                ChatSession(id, "New chat")
-                            ) + sessions
-                            activeId = id
-                            message = ""
-                        }
-                    ) {
-                        Text("✎", fontSize = 22.sp, color = Lavender)
-                    }
-
-                    Box {
-                        IconButton(
-                            onClick = { moreMenu = true }
-                        ) {
-                            Text("⋮", fontSize = 25.sp, color = Lavender)
-                        }
-                        DropdownMenu(
-                            expanded = moreMenu,
-                            onDismissRequest = { moreMenu = false },
-                            modifier = Modifier.background(SurfaceDark)
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("New chat") },
-                                onClick = {
-                                    val id = nextId++
-                                    sessions = listOf(
-                                        ChatSession(id, "New chat")
-                                    ) + sessions
-                                    activeId = id
-                                    moreMenu = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("About Morrow") },
-                                onClick = { moreMenu = false }
-                            )
-                        }
+                    HeaderAction("＋") {
+                        val id = nextId++
+                        sessions = listOf(ChatSession(id, "New chat")) + sessions
+                        activeId = id
+                        message = ""
+                        notice = false
                     }
                 }
 
-                // Conversation
                 if (active.messages.isEmpty()) {
                     Column(
                         modifier = Modifier
@@ -369,33 +301,25 @@ fun MorrowScreen() {
                             .padding(horizontal = 22.dp),
                         verticalArrangement = Arrangement.Center
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(Color(0xFF302044)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("✦", fontSize = 28.sp, color = Purple)
-                        }
+                        BrandMark()
 
-                        Spacer(Modifier.height(22.dp))
+                        Spacer(Modifier.height(24.dp))
 
                         Text(
                             "What can I help with?",
+                            color = Lavender,
                             fontSize = 29.sp,
                             lineHeight = 36.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Lavender
+                            fontWeight = FontWeight.Bold
                         )
 
                         Spacer(Modifier.height(10.dp))
 
                         Text(
                             "Ask anything. Let's figure it out together.",
+                            color = Muted,
                             fontSize = 14.sp,
-                            lineHeight = 22.sp,
-                            color = Muted
+                            lineHeight = 22.sp
                         )
 
                         Spacer(Modifier.height(26.dp))
@@ -431,29 +355,23 @@ fun MorrowScreen() {
                             .weight(1f)
                             .fillMaxWidth(),
                         contentPadding = PaddingValues(
-                            horizontal = 20.dp,
+                            horizontal = 18.dp,
                             vertical = 22.dp
                         ),
-                        verticalArrangement =
-                            Arrangement.spacedBy(25.dp)
+                        verticalArrangement = Arrangement.spacedBy(22.dp)
                     ) {
                         items(active.messages) { item ->
                             if (item.isUser) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement =
-                                        Arrangement.End
+                                    horizontalArrangement = Arrangement.End
                                 ) {
                                     Text(
                                         item.text,
                                         modifier = Modifier
                                             .widthIn(max = 300.dp)
-                                            .clip(
-                                                RoundedCornerShape(20.dp)
-                                            )
-                                            .background(
-                                                Color(0xFF302044)
-                                            )
+                                            .clip(RoundedCornerShape(20.dp))
+                                            .background(Color(0xFF302044))
                                             .padding(14.dp),
                                         color = Lavender,
                                         fontSize = 15.sp,
@@ -461,36 +379,131 @@ fun MorrowScreen() {
                                     )
                                 }
                             } else {
-                                Column(
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
+                                Column {
                                     Row(
-                                        verticalAlignment =
-                                            Alignment.CenterVertically
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         BrandMark()
                                         Spacer(Modifier.width(9.dp))
                                         Text(
                                             "Morrow",
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = Lavender
+                                            color = Lavender,
+                                            fontWeight = FontWeight.SemiBold
                                         )
                                     }
-
                                     Spacer(Modifier.height(10.dp))
-
                                     Text(
                                         item.text,
                                         color = Lavender,
-                                      )
+                                        fontSize = 14.sp,
+                                        lineHeight = 22.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Bg)
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(23.dp))
+                            .background(Panel)
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        BasicTextField(
+                            value = message,
+                            onValueChange = { message = it },
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(vertical = 10.dp),
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                color = Lavender,
+                                fontSize = 15.sp
+                            ),
+                            cursorBrush = androidx.compose.ui.graphics.SolidColor(Purple),
+                            decorationBox = { innerTextField ->
+                                Box {
+                                    if (message.isEmpty()) {
+                                        Text(
+                                            "Message Morrow...",
+                                            color = Muted,
+                                            fontSize = 14.sp
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            }
+                        )
+
+                        Spacer(Modifier.width(8.dp))
+
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (message.isNotBlank()) Purple
+                                    else Color(0xFF382B45)
+                                )
+                                .clickable {
+                                    val question = message.trim()
+                                    if (question.isNotEmpty()) {
+                                        val updatedMessages = active.messages +
+                                            ChatMessage(question, true) +
+                                            ChatMessage(
+                                                "The Morrow interface is working, but its AI backend isn't connected yet. Your message has not been sent to an AI model.",
+                                                false
+                                            )
+
+                                        val title = if (active.messages.isEmpty()) {
+                                            question.take(28)
+                                        } else {
+                                            active.title
+                                        }
+
+                                        sessions = sessions.map {
+                                            if (it.id == activeId) {
+                                                it.copy(
+                                                    title = title,
+                                                    messages = updatedMessages
+                                                )
+                                            } else it
+                                        }
+                                        message = ""
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                          
+                        Text("✦", color = Purple, fontSize = 19.sp)
+        }
+
+        Spacer(Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                title,
+                color = Lavender,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold
+            )
             Spacer(Modifier.height(4.dp))
             Text(
                 description,
-                fontSize = 12.sp,
-                color = Muted
+                color = Muted,
+                fontSize = 11.sp
             )
         }
-        Text("›", color = Purple, fontSize = 26.sp)
+
+        Text("›", color = Purple, fontSize = 25.sp)
     }
-                        }
-                    
+                }
+                
