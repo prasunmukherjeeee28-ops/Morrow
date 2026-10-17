@@ -11,6 +11,23 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -70,6 +87,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
@@ -330,111 +349,238 @@ private fun MorrowMainScreen() {
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .height(54.dp)
-                    .padding(horizontal = 7.dp),
+                    .height(58.dp)
+                    .padding(horizontal = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                    Text("☰", fontSize = 21.sp, color = MorrowText)
-                }
-                BrandMark(Modifier.size(27.dp))
-                Spacer(Modifier.width(9.dp))
-                Column {
-                    Text("Morrow", color = MorrowText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                    Text("AI assistant", color = MorrowMuted, fontSize = 10.sp)
+                    Text("☰", fontSize = 22.sp, color = MorrowText)
                 }
                 Spacer(Modifier.weight(1f))
-                Box {
-                    IconButton(onClick = { showOverflow = true }) {
-                        Text("⋮", fontSize = 25.sp, color = MorrowText)
-                    }
-                    DropdownMenu(
-                        expanded = showOverflow,
-                        onDismissRequest = { showOverflow = false }
+                Surface(
+                    shape = RoundedCornerShape(30.dp),
+                    color = Color(0xFF25145A),
+                    border = BorderStroke(1.dp, Color(0xFF7652E8).copy(alpha = 0.72f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("New chat") },
-                            onClick = { createNewChat(); showOverflow = false }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("About Morrow") },
-                            onClick = { showOverflow = false }
-                        )
+                        BrandMark(Modifier.size(23.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Morrow", color = MorrowText, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.width(6.dp))
+                        Text("✦", color = Color(0xFFE0A5FF), fontSize = 15.sp)
                     }
                 }
-                IconButton(onClick = { createNewChat() }) {
-                    Text("✎", fontSize = 21.sp, color = MorrowText)
+                Spacer(Modifier.weight(1f))
+                IconButton(
+                    onClick = { createNewChat() },
+                    modifier = Modifier
+                        .size(43.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF171438))
+                ) {
+                    Text("＋", color = Color(0xFFDCC8FF), fontSize = 24.sp)
                 }
             }
 
             if (currentMessages.isEmpty()) {
                 var activeSuggestion by remember { mutableStateOf(0) }
                 val suggestions = listOf(
+                    Triple("Explore an idea", "Turn your thoughts into something amazing.", "Give me three creative project ideas"),
                     Triple("Learn something new", "From school topics to the mysteries of space.", "Teach me Python from the beginning"),
-                    Triple("Explore an idea", "Turn a random thought into something amazing.", "Give me three creative project ideas"),
                     Triple("Make a plan", "Small steps. Clear goals. Real progress.", "Help me plan a project step by step")
                 )
                 LaunchedEffect(activeId) {
                     while (true) {
-                        delay(4200)
+                        delay(5200)
                         activeSuggestion = (activeSuggestion + 1) % suggestions.size
                     }
                 }
+                val motion = rememberInfiniteTransition(label = "morrow-space-motion")
+                val floatY by motion.animateFloat(
+                    initialValue = -4f,
+                    targetValue = 4f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(3200, easing = FastOutSlowInEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "mascot-float"
+                )
+                val glowScale by motion.animateFloat(
+                    initialValue = 0.97f,
+                    targetValue = 1.04f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(3600, easing = FastOutSlowInEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "mascot-glow"
+                )
+
                 Box(
-                    modifier = Modifier.weight(1f).fillMaxWidth()
-                        .background(Brush.verticalGradient(listOf(Color(0xFF080A1B), Color(0xFF0C0B2B), Color(0xFF080A16))))
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color(0xFF0B0820), Color(0xFF0B0B21), Color(0xFF050812))
+                            )
+                        )
                 ) {
-                    Column(Modifier.fillMaxSize().padding(horizontal = 22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 5.dp)
+                            .size(290.dp)
+                            .graphicsLayer {
+                                scaleX = glowScale
+                                scaleY = glowScale
+                                translationY = floatY * density
+                                alpha = 0.85f
+                            }
+                            .background(
+                                Brush.radialGradient(
+                                    listOf(
+                                        Color(0xFF6328D9).copy(alpha = 0.32f),
+                                        Color(0xFF31146F).copy(alpha = 0.16f),
+                                        Color.Transparent
+                                    )
+                                ),
+                                CircleShape
+                            )
+                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 18.dp, vertical = 14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Spacer(Modifier.height(12.dp))
                         Box(
-                            Modifier.size(148.dp).shadow(28.dp, CircleShape)
-                                .background(Brush.radialGradient(listOf(Color(0xFF28216D), Color(0xFF11132D), Color.Transparent)), CircleShape),
+                            modifier = Modifier
+                                .size(116.dp)
+                                .graphicsLayer {
+                                    translationY = floatY * density
+                                },
                             contentAlignment = Alignment.Center
-                        ) { BrandMark(Modifier.size(108.dp)) }
-                        Spacer(Modifier.height(15.dp))
-                        Text("Hey, I’m Morrow", color = MorrowText, fontSize = 29.sp, lineHeight = 34.sp, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center)
-                        Text("Your space to think.", color = Color(0xFFB7A8FF), fontSize = 17.sp, modifier = Modifier.padding(top = 6.dp, bottom = 24.dp))
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(108.dp)
+                                    .background(
+                                        Brush.radialGradient(
+                                            listOf(Color(0xFF45209C).copy(alpha = 0.44f), Color(0xFF211449).copy(alpha = 0.32f), Color.Transparent)
+                                        ),
+                                        CircleShape
+                                    )
+                            )
+                            BrandMark(Modifier.size(76.dp))
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "Hi, I’m Morrow.",
+                            color = MorrowText,
+                            fontSize = 27.sp,
+                            lineHeight = 33.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
+                        )
+                        Text(
+                            "How can I help you today?",
+                            color = Color(0xFFB9AEDB),
+                            fontSize = 15.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(top = 7.dp, bottom = 22.dp)
+                        )
+
                         AnimatedContent(
                             targetState = activeSuggestion,
                             transitionSpec = {
-                                (slideInHorizontally(tween(430, easing = FastOutSlowInEasing), initialOffsetX = { width -> width }) + fadeIn(tween(350))) togetherWith
-                                (slideOutHorizontally(tween(350, easing = FastOutSlowInEasing), targetOffsetX = { width -> -width / 3 }) + fadeOut(tween(250)))
+                                (slideInHorizontally(
+                                    animationSpec = tween(620, easing = FastOutSlowInEasing),
+                                    initialOffsetX = { width -> width }
+                                ) + fadeIn(animationSpec = tween(500))) togetherWith
+                                    (slideOutHorizontally(
+                                        animationSpec = tween(540, easing = FastOutSlowInEasing),
+                                        targetOffsetX = { width -> -width / 4 }
+                                    ) + fadeOut(animationSpec = tween(400)))
                             },
-                            label = "suggestion-carousel"
+                            label = "morrow-featured-prompt"
                         ) { index ->
                             val item = suggestions[index]
-                            val accent = listOf(Color(0xFF38BDF8), Color(0xFFC084FC), Color(0xFF22D3EE))[index]
+                            val accent = listOf(Color(0xFFB06CFF), Color(0xFF45BFFF), Color(0xFF34D7E7))[index]
                             Surface(
                                 onClick = { input = item.third },
-                                modifier = Modifier.fillMaxWidth().shadow(16.dp, RoundedCornerShape(24.dp)),
-                                shape = RoundedCornerShape(24.dp),
-                                color = Color(0xD9101534),
-                                border = BorderStroke(1.dp, accent.copy(alpha = 0.75f))
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(22.dp),
+                                color = Color(0xD910102C),
+                                border = BorderStroke(1.dp, accent.copy(alpha = 0.68f))
                             ) {
-                                Row(Modifier.padding(horizontal = 16.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Box(Modifier.size(56.dp).clip(RoundedCornerShape(18.dp)).background(accent.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
-                                        Text(listOf("✧", "✦", "◷")[index], color = accent, fontSize = 30.sp)
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 15.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .clip(RoundedCornerShape(15.dp))
+                                            .background(accent.copy(alpha = 0.12f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(listOf("✧", "⌘", "◷")[index], color = accent, fontSize = 27.sp)
                                     }
-                                    Spacer(Modifier.width(13.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Text(item.first, color = MorrowText, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                                        Spacer(Modifier.height(5.dp))
-                                        Text(item.second, color = Color(0xFFB2BBDD), fontSize = 12.sp, lineHeight = 18.sp)
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(item.first, color = MorrowText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(item.second, color = Color(0xFFB3B7D8), fontSize = 12.sp, lineHeight = 17.sp)
                                     }
-                                    Text("›", color = accent, fontSize = 30.sp)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("›", color = accent, fontSize = 27.sp)
                                 }
                             }
                         }
-                        Spacer(Modifier.height(15.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Spacer(Modifier.height(12.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             suggestions.indices.forEach { index ->
-                                val width by animateFloatAsState(if (index == activeSuggestion) 24f else 6f, tween(250), label = "carousel-indicator")
-                                Box(Modifier.width(width.dp).height(6.dp).clip(CircleShape)
-                                    .background(if (index == activeSuggestion) Color(0xFFC084FC) else MorrowBorder)
-                                    .clickable { activeSuggestion = index })
+                                val width by animateFloatAsState(
+                                    targetValue = if (index == activeSuggestion) 22f else 6f,
+                                    animationSpec = tween(320, easing = FastOutSlowInEasing),
+                                    label = "featured-dot"
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .width(width.dp)
+                                        .height(5.dp)
+                                        .clip(CircleShape)
+                                        .background(if (index == activeSuggestion) Color(0xFFB06CFF) else Color(0xFF35304B))
+                                        .clickable { activeSuggestion = index }
+                                )
                             }
                         }
-                        Spacer(Modifier.height(17.dp))
-                        Text("A universe of ideas, one message away.", color = MorrowMuted.copy(alpha = 0.78f), fontSize = 11.sp, textAlign = TextAlign.Center)
+                        Spacer(Modifier.height(23.dp))
+
+                        PromptChipRow(
+                            PromptChipData("▧", "Image prompt", Color(0xFF7E7CFF), "Help me write a detailed AI image prompt for: "),
+                            PromptChipData("≋", "Summarize text", Color(0xFFB06CFF), "Summarize this text clearly: ")
+                        ) { input = it }
+                        Spacer(Modifier.height(9.dp))
+                        PromptChipRow(
+                            PromptChipData("◷", "Make a plan", Color(0xFF38CFF0), "Help me make a realistic step-by-step plan for: "),
+                            PromptChipData("✎", "Help me write", Color(0xFFB06CFF), "Help me write: "),
+                            PromptChipData("✧", "Brainstorm", Color(0xFF8B82FF), "Brainstorm ideas for: ")
+                        ) { input = it }
+                        Spacer(Modifier.height(9.dp))
+                        PromptChipRow(
+                            PromptChipData("⌘", "Explain a topic", Color(0xFF6FB9FF), "Explain this topic simply: "),
+                            PromptChipData("▤", "Help with code", Color(0xFF3CCFC6), "Help me understand or write code for: ")
+                        ) { input = it }
+                        Spacer(Modifier.height(10.dp))
                     }
                 }
             } else {
@@ -444,7 +590,9 @@ private fun MorrowMainScreen() {
                     contentPadding = PaddingValues(horizontal = 18.dp, vertical = 22.dp),
                     verticalArrangement = Arrangement.spacedBy(23.dp)
                 ) {
-                    items(currentMessages, key = { it.id }) { chatMessage -> MorrowMessageRow(chatMessage) }
+                    items(currentMessages, key = { it.id }) { chatMessage ->
+                        MorrowMessageRow(chatMessage)
+                    }
                     if (isLoading) {
                         item(key = "loading_" + activeId) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -466,9 +614,9 @@ private fun MorrowMainScreen() {
             Text(
                 "Morrow can make mistakes. Check important information.",
                 color = MorrowMuted.copy(alpha = 0.7f),
-                fontSize = 10.sp,
+                fontSize = 9.sp,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, bottom = 5.dp)
+                modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, bottom = 4.dp)
             )
         }
     }
@@ -518,6 +666,45 @@ private fun SuggestionCard(title: String, subtitle: String, onClick: () -> Unit)
             Text(subtitle, color = MorrowMuted, fontSize = 11.sp)
         }
         Text("›", color = MorrowAccent, fontSize = 26.sp)
+    }
+}
+
+private data class PromptChipData(
+    val symbol: String,
+    val title: String,
+    val accent: Color,
+    val prompt: String
+)
+
+@Composable
+private fun PromptChipRow(vararg chips: PromptChipData, onPick: (String) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        chips.forEach { chip ->
+            Surface(
+                onClick = { onPick(chip.prompt) },
+                shape = RoundedCornerShape(28.dp),
+                color = Color(0xFF0E1023),
+                border = BorderStroke(1.dp, Color(0xFF292943)),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier.size(27.dp).clip(CircleShape).background(chip.accent.copy(alpha = 0.14f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(chip.symbol, color = chip.accent, fontSize = 15.sp)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(chip.title, color = Color(0xFFE0DFF0), fontSize = 12.sp, maxLines = 1)
+                }
+            }
+        }
     }
 }
 
@@ -595,8 +782,13 @@ private fun MorrowComposer(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 13.dp, vertical = 8.dp)
-            .clip(RoundedCornerShape(25.dp))
-            .background(MorrowSurface)
+            .clip(RoundedCornerShape(28.dp))
+            .background(Color(0xFF101128))
+            .then(
+                Modifier
+                    .background(Color.Transparent, RoundedCornerShape(28.dp))
+            )
+            .border(BorderStroke(1.dp, Color(0xFF464073).copy(alpha = 0.75f)), RoundedCornerShape(28.dp))
             .padding(horizontal = 8.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -629,12 +821,12 @@ private fun MorrowComposer(
             modifier = Modifier
                 .size(38.dp)
                 .clip(CircleShape)
-                .background(if (inputText.isNotBlank() && !isLoading) MorrowAccent else Color(0xFF33283F))
+                .background(if (inputText.isNotBlank() && !isLoading) Color(0xFF8B35E9) else Color(0xFF28213E))
         ) {
             Text(
-                "↑",
+                "➤",
                 color = if (inputText.isNotBlank() && !isLoading) Color.White else MorrowMuted,
-                fontSize = 21.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold
             )
         }
