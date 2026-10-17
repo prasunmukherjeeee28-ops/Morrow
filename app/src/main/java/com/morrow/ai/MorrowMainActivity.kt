@@ -70,10 +70,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -93,7 +95,7 @@ import java.net.URL
 private val MorrowBackground = Color(0xFF080A16)
 private val MorrowSurface = Color(0xFF10172B)
 private val MorrowSidebar = Color(0xFF0B1020)
-private val MorrowAccent = Color(0xFF38BDF8)
+private val MorrowAccent = Color(0xFFB06CFF)
 private val MorrowText = Color(0xFFF4F7FF)
 private val MorrowMuted = Color(0xFF9BAAC8)
 private val MorrowBorder = Color(0xFF263653)
@@ -550,17 +552,20 @@ private fun MorrowMainScreen() {
                         Spacer(Modifier.height(23.dp))
 
                         PromptChipRow(
+                            rowIndex = 0,
                             PromptChipData("▧", "Image prompt", Color(0xFF9B7BFF), "Help me write a detailed AI image prompt for: "),
                             PromptChipData("≋", "Summarize text", Color(0xFFB06CFF), "Summarize this text clearly: ")
                         ) { input = it }
                         Spacer(Modifier.height(9.dp))
                         PromptChipRow(
+                            rowIndex = 1,
                             PromptChipData("◷", "Make a plan", Color(0xFFB06CFF), "Help me make a realistic step-by-step plan for: "),
                             PromptChipData("✎", "Help me write", Color(0xFFB06CFF), "Help me write: "),
                             PromptChipData("✧", "Brainstorm", Color(0xFF8B82FF), "Brainstorm ideas for: ")
                         ) { input = it }
                         Spacer(Modifier.height(9.dp))
                         PromptChipRow(
+                            rowIndex = 2,
                             PromptChipData("⌘", "Explain a topic", Color(0xFF9B7BFF), "Explain this topic simply: "),
                             PromptChipData("▤", "Help with code", Color(0xFFE879F9), "Help me understand or write code for: ")
                         ) { input = it }
@@ -615,7 +620,7 @@ private fun BrandMark(modifier: Modifier = Modifier) {
     )
 }
 
-private val BrushForBrand = Color(0xFF38BDF8)
+private val BrushForBrand = Color(0xFFB06CFF)
 
 @Composable
 private fun SidebarAction(symbol: String, label: String, onClick: () -> Unit) {
@@ -661,59 +666,79 @@ private data class PromptChipData(
 )
 
 @Composable
-private fun PromptChipRow(vararg chips: PromptChipData, onPick: (String) -> Unit) {
-    val scrollState = rememberScrollState()
-    LaunchedEffect(chips.size) {
-        // Gently drift across the chips, then return without a sudden jump.
-        while (true) {
-            delay(1200)
-            val end = scrollState.maxValue
-            if (end > 0) {
-                scrollState.animateScrollTo(
-                    end,
-                    animationSpec = tween(durationMillis = 9000, easing = LinearEasing)
-                )
-                delay(650)
-                scrollState.animateScrollTo(
-                    0,
-                    animationSpec = tween(durationMillis = 9000, easing = LinearEasing)
-                )
-            } else {
-                delay(1800)
-            }
-        }
+private fun PromptChipRow(
+    rowIndex: Int,
+    vararg chips: PromptChipData,
+    onPick: (String) -> Unit
+) {
+    val motion = rememberInfiniteTransition(label = "prompt-row-motion-$rowIndex")
+    val progress by motion.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 6200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "prompt-row-progress-$rowIndex"
+    )
+    var cycleWidthPx by remember { mutableStateOf(0f) }
+    val direction = if (rowIndex % 2 == 0) -1f else 1f
+    val translateX = if (direction < 0f) {
+        -cycleWidthPx * progress
+    } else {
+        -cycleWidthPx + cycleWidthPx * progress
     }
-    Row(
-        modifier = Modifier.fillMaxWidth().horizontalScroll(scrollState),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clipToBounds()
     ) {
-        chips.forEach { chip ->
-            Surface(
-                onClick = { onPick(chip.prompt) },
-                shape = RoundedCornerShape(28.dp),
-                color = Color(0xFF0E1023),
-                border = BorderStroke(1.dp, Color(0xFF292943)),
-            ) {
+        Row(
+            modifier = Modifier.graphicsLayer {
+                translationX = translateX
+            },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            repeat(3) { copyIndex ->
                 Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    modifier = if (copyIndex == 0) Modifier.onSizeChanged { size ->
+                        cycleWidthPx = size.width.toFloat()
+                    } else Modifier,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
-                        modifier = Modifier.size(27.dp).clip(CircleShape).background(chip.accent.copy(alpha = 0.14f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(chip.symbol, color = chip.accent, fontSize = 15.sp)
+                    chips.forEach { chip ->
+                        Surface(
+                            onClick = { onPick(chip.prompt) },
+                            shape = RoundedCornerShape(28.dp),
+                            color = Color(0xFF0E1023),
+                            border = BorderStroke(1.dp, Color(0xFF292943))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(27.dp)
+                                        .clip(CircleShape)
+                                        .background(chip.accent.copy(alpha = 0.14f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(chip.symbol, color = chip.accent, fontSize = 15.sp)
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                Text(chip.title, color = Color(0xFFE0DFF0), fontSize = 12.sp, maxLines = 1)
+                            }
+                        }
                     }
                     Spacer(Modifier.width(8.dp))
-                    Text(chip.title, color = Color(0xFFE0DFF0), fontSize = 12.sp, maxLines = 1)
                 }
             }
         }
     }
 }
-
-@Composable
 private fun MorrowMessageRow(message: MorrowChatMessage) {
     if (message.sender == MorrowSender.USER) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
