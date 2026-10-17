@@ -75,13 +75,13 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 private val MorrowBackground = Color(0xFF080A16)
-private val MorrowSurface = Color(0xFF111629)
+private val MorrowSurface = Color(0xFF10172B)
 private val MorrowSidebar = Color(0xFF0B1020)
-private val MorrowAccent = Color(0xFF818CF8)
-private val MorrowText = Color(0xFFF1F5FF)
-private val MorrowMuted = Color(0xFF9AA8C7)
-private val MorrowBorder = Color(0xFF26304B)
-private val MorrowSelected = Color(0xFF202746)
+private val MorrowAccent = Color(0xFF38BDF8)
+private val MorrowText = Color(0xFFF4F7FF)
+private val MorrowMuted = Color(0xFF9BAAC8)
+private val MorrowBorder = Color(0xFF263653)
+private val MorrowSelected = Color(0xFF172B46)
 
 // The Gemini API key stays in Cloudflare Worker secrets, never inside this app.
 private const val MORROW_CHAT_ENDPOINT =
@@ -216,7 +216,7 @@ private fun MorrowMainScreen() {
                         Spacer(Modifier.width(10.dp))
                         Column {
                             Text("morrow", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = MorrowText)
-                            Text("YOUR SPACE TO THINK", fontSize = 9.sp, letterSpacing = 1.2.sp, color = MorrowMuted)
+                            Text("YOUR SPACE TO EXPLORE", fontSize = 9.sp, letterSpacing = 1.2.sp, color = MorrowMuted)
                         }
                         Spacer(Modifier.weight(1f))
                         IconButton(onClick = { scope.launch { drawerState.close() } }) {
@@ -365,7 +365,7 @@ private fun MorrowMainScreen() {
                     BrandMark(Modifier.size(54.dp))
                     Spacer(Modifier.height(22.dp))
                     Text(
-                        "Your space to think.",
+                        "A little more wonder.\nA lot more possibility.",
                         color = MorrowText,
                         fontSize = 30.sp,
                         lineHeight = 36.sp,
@@ -373,7 +373,7 @@ private fun MorrowMainScreen() {
                     )
                     Spacer(Modifier.height(9.dp))
                     Text(
-                        "Big ideas start with one question. What is on your mind?",
+                        "Your ideas, questions, and late-night curiosities have a place here.",
                         color = MorrowMuted,
                         fontSize = 14.sp,
                         lineHeight = 22.sp
@@ -406,7 +406,7 @@ private fun MorrowMainScreen() {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 BrandMark(Modifier.size(25.dp))
                                 Spacer(Modifier.width(9.dp))
-                                Text("Thinking through the stars…", color = MorrowMuted, fontSize = 13.sp)
+                                Text("Morrow is thinking…", color = MorrowMuted, fontSize = 13.sp)
                             }
                         }
                     }
