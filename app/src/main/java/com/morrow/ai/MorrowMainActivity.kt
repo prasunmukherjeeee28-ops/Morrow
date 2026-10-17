@@ -9,6 +9,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -430,14 +432,11 @@ private fun MorrowMainScreen() {
 
 @Composable
 private fun BrandMark(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(BrushForBrand),
-        contentAlignment = Alignment.Center
-    ) {
-        Text("m", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.SemiBold)
-    }
+    Image(
+        painter = painterResource(R.drawable.morrow_logo),
+        contentDescription = "Morrow logo",
+        modifier = modifier.clip(RoundedCornerShape(14.dp))
+    )
 }
 
 private val BrushForBrand = Color(0xFF8B5CF6)
