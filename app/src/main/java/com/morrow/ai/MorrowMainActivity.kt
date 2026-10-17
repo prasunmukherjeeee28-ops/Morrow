@@ -503,14 +503,41 @@ private fun MorrowMessageRow(message: MorrowChatMessage) {
                 Text("Morrow", color = MorrowText, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
             }
             Text(
-                message.text,
+                formatAssistantText(message.text),
                 color = MorrowText,
-                fontSize = 15.sp,
-                lineHeight = 24.sp,
+                fontSize = 14.sp,
+                lineHeight = 22.sp,
                 modifier = Modifier.padding(start = 34.dp, top = 9.dp)
             )
         }
     }
+}
+
+private fun formatAssistantText(raw: String): String {
+    return raw
+        .replace(Regex("(?i)<br\\s*/?>"), "\n")
+        .replace(Regex("(?i)</(p|div|h[1-6])\\s*>"), "\n")
+        .replace(Regex("(?i)<(p|div|h[1-6])[^>]*>"), "")
+        .replace(Regex("(?m)^\\s*#{1,6}\\s*"), "")
+        .replace(Regex("(?m)^\\s*[-*_]{3,}\\s*$"), "")
+        .lines()
+        .map { line ->
+            val trimmed = line.trim()
+            if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
+                val cells = trimmed.trim('|').split('|').map { it.trim() }
+                if (cells.all { it.isEmpty() || it.matches(Regex(":?-{2,}:?")) }) {
+                    ""
+                } else {
+                    cells.filter { it.isNotBlank() }.joinToString("  •  ")
+                }
+            } else {
+                line.replace(Regex("\\*\\*(.*?)\\*\\*"), "$1")
+                    .replace(Regex("(?<!\\*)\\*(.*?)\\*(?!\\*)"), "$1")
+            }
+        }
+        .joinToString("\n")
+        .replace(Regex("\\n{3,}"), "\n\n")
+        .trim()
 }
 
 @Composable
