@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -493,7 +494,7 @@ private fun MorrowMainScreen() {
                             label = "morrow-featured-prompt"
                         ) { index ->
                             val item = suggestions[index]
-                            val accent = listOf(Color(0xFFB06CFF), Color(0xFF45BFFF), Color(0xFF34D7E7))[index]
+                            val accent = listOf(Color(0xFFB06CFF), Color(0xFF9B7BFF), Color(0xFFE879F9))[index]
                             Surface(
                                 onClick = { input = item.third },
                                 modifier = Modifier.fillMaxWidth(),
@@ -549,19 +550,19 @@ private fun MorrowMainScreen() {
                         Spacer(Modifier.height(23.dp))
 
                         PromptChipRow(
-                            PromptChipData("▧", "Image prompt", Color(0xFF7E7CFF), "Help me write a detailed AI image prompt for: "),
+                            PromptChipData("▧", "Image prompt", Color(0xFF9B7BFF), "Help me write a detailed AI image prompt for: "),
                             PromptChipData("≋", "Summarize text", Color(0xFFB06CFF), "Summarize this text clearly: ")
                         ) { input = it }
                         Spacer(Modifier.height(9.dp))
                         PromptChipRow(
-                            PromptChipData("◷", "Make a plan", Color(0xFF38CFF0), "Help me make a realistic step-by-step plan for: "),
+                            PromptChipData("◷", "Make a plan", Color(0xFFB06CFF), "Help me make a realistic step-by-step plan for: "),
                             PromptChipData("✎", "Help me write", Color(0xFFB06CFF), "Help me write: "),
                             PromptChipData("✧", "Brainstorm", Color(0xFF8B82FF), "Brainstorm ideas for: ")
                         ) { input = it }
                         Spacer(Modifier.height(9.dp))
                         PromptChipRow(
-                            PromptChipData("⌘", "Explain a topic", Color(0xFF6FB9FF), "Explain this topic simply: "),
-                            PromptChipData("▤", "Help with code", Color(0xFF3CCFC6), "Help me understand or write code for: ")
+                            PromptChipData("⌘", "Explain a topic", Color(0xFF9B7BFF), "Explain this topic simply: "),
+                            PromptChipData("▤", "Help with code", Color(0xFFE879F9), "Help me understand or write code for: ")
                         ) { input = it }
                         Spacer(Modifier.height(10.dp))
                     }
@@ -661,8 +662,29 @@ private data class PromptChipData(
 
 @Composable
 private fun PromptChipRow(vararg chips: PromptChipData, onPick: (String) -> Unit) {
+    val scrollState = rememberScrollState()
+    LaunchedEffect(chips.size) {
+        // Gently drift across the chips, then return without a sudden jump.
+        while (true) {
+            delay(1200)
+            val end = scrollState.maxValue
+            if (end > 0) {
+                scrollState.animateScrollTo(
+                    end,
+                    animationSpec = tween(durationMillis = 9000, easing = LinearEasing)
+                )
+                delay(650)
+                scrollState.animateScrollTo(
+                    0,
+                    animationSpec = tween(durationMillis = 9000, easing = LinearEasing)
+                )
+            } else {
+                delay(1800)
+            }
+        }
+    }
     Row(
-        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        modifier = Modifier.fillMaxWidth().horizontalScroll(scrollState),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
