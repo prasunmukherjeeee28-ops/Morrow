@@ -6,20 +6,31 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.provider.OpenableColumns
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import android.util.Base64
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.animateFloatAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -111,10 +122,12 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -137,13 +150,18 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -188,6 +206,12 @@ private const val MORROW_CHAT_ENDPOINT =
     "https://morrow-backend.prasunmukherjeeee28.workers.dev/chat"
 
 private val TwoPi = 2f * PI.toFloat()
+
+// ---------- Limits ----------
+
+private const val MAX_ATTACHMENTS = 5
+private const val MAX_IMAGE_SIDE = 1024
+private const val MAX_TEXT_BYTES = 200_000
 
 // ---------- Storage keys ----------
 
@@ -238,10 +262,24 @@ private val MarqueeRowThreePrompts = listOf(
 
 enum class MorrowSender { USER, ASSISTANT }
 
+/**
+ * payload: base64 image or text file content, used only when sending. Not saved to disk.
+ * thumbnail: small preview for the chat. Not saved to disk.
+ */
+data class MorrowAttachment(
+    val name: String,
+    val mime: String,
+    val isImage: Boolean,
+    val payload: String? = null,
+    val thumbnail: ImageBitmap? = null
+)
+
 data class MorrowChatMessage(
     val id: String,
     val text: String,
-    val sender: MorrowSender
+    val sender: MorrowSender,
+    val attachments: List<MorrowAttachment> = emptyList(),
+    val feedback: Int = 0 // 1 = thumbs up, -1 = thumbs down, 0 = none
 )
 
 data class MorrowConversationSession(
@@ -276,10 +314,25 @@ private fun loadChats(context: Context): SavedState {
             val array = chat.getJSONArray("messages")
             messages[id] = (0 until array.length()).map { j ->
                 val m = array.getJSONObject(j)
+                val attachmentArray = m.optJSONArray("attachments")
+                val attachments: List<MorrowAttachment> = if (attachmentArray == null) {
+                    emptyList()
+                } else {
+                    (0 until attachmentArray.length()).map { k ->
+                        val a = attachmentArray.getJSONObject(k)
+                        MorrowAttachment(
+                            name = a.getString("name"),
+                            mime = a.getString("mime"),
+                            isImage = a.optBoolean("isImage", false)
+                        )
+                    }
+                }
                 MorrowChatMessage(
                     id = m.getString("id"),
                     text = m.getString("text"),
-                    sender = MorrowSender.valueOf(m.getString("sender"))
+                    sender = MorrowSender.valueOf(m.getString("sender")),
+                    attachments = attachments,
+                    feedback = m.optInt("feedback", 0)
                 )
             }
         }
@@ -298,11 +351,22 @@ private fun saveChats(context: Context, state: SavedState) {
     state.conversations.forEach { conversation ->
         val messages = JSONArray()
         state.messages[conversation.id].orEmpty().forEach { m ->
+            val attachments = JSONArray()
+            m.attachments.forEach { a ->
+                attachments.put(
+                    JSONObject()
+                        .put("name", a.name)
+                        .put("mime", a.mime)
+                        .put("isImage", a.isImage)
+                )
+            }
             messages.put(
                 JSONObject()
                     .put("id", m.id)
                     .put("text", m.text)
                     .put("sender", m.sender.name)
+                    .put("feedback", m.feedback)
+                    .put("attachments", attachments)
             )
         }
         chats.put(
@@ -510,6 +574,7 @@ private fun MorrowMainScreen() {
     var searchText by remember { mutableStateOf("") }
     var searchVisible by remember { mutableStateOf(false) }
 
+    // Chat state
     val saved = remember { loadChats(context) }
     val conversations = remember {
         mutableStateListOf<MorrowConversationSession>().also { it.addAll(saved.conversations) }
@@ -519,6 +584,17 @@ private fun MorrowMainScreen() {
     }
     var activeId by remember { mutableStateOf(saved.activeId) }
     var loadingConversationIds by remember { mutableStateOf(setOf<String>()) }
+    val generationJobs = remember { mutableMapOf<String, Job>() }
+
+    // Composer attachments
+    var attachmentsOpen by remember { mutableStateOf(false) }
+    var pendingAttachments by remember { mutableStateOf(listOf<MorrowAttachment>()) }
+    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
+
+    // Reply typing and speech
+    var typingMessageId by remember { mutableStateOf<String?>(null) }
+    var typingSkip by remember { mutableStateOf(false) }
+    var speakingId by remember { mutableStateOf<String?>(null) }
 
     val clock by produceState(initialValue = currentClock()) {
         while (true) {
@@ -530,10 +606,12 @@ private fun MorrowMainScreen() {
 
     val currentMessages = messagesByConversation[activeId].orEmpty()
     val isLoading = activeId in loadingConversationIds
+    val isTyping = typingMessageId != null
     val listState = rememberLazyListState()
     val voice = rememberVoiceInput { spoken ->
         input = if (input.isBlank()) spoken else "$input $spoken"
     }
+    val speaker = rememberSpeaker { speakingId = null }
 
     // Persist every change to conversations, messages, or the active chat.
     LaunchedEffect(conversations.toList(), messagesByConversation.toMap(), activeId) {
@@ -553,72 +631,157 @@ private fun MorrowMainScreen() {
         messagesByConversation[id] = emptyList()
         activeId = id
         input = ""
+        pendingAttachments = emptyList()
+        attachmentsOpen = false
+        typingMessageId = null
+        typingSkip = false
     }
 
-    fun sendPrompt(prompt: String) {
+    fun addAttachments(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        scope.launch {
+            val prepared = withContext(Dispatchers.IO) {
+                uris.mapNotNull { uri -> runCatching { prepareAttachment(context, uri) }.getOrNull() }
+            }
+            pendingAttachments = (pendingAttachments + prepared).take(MAX_ATTACHMENTS)
+            attachmentsOpen = false
+        }
+    }
+
+    val photoPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(MAX_ATTACHMENTS)
+    ) { uris -> addAttachments(uris) }
+
+    val filePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris -> addAttachments(uris) }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture()
+    ) { captured ->
+        val uri = pendingCameraUri
+        pendingCameraUri = null
+        if (captured && uri != null) addAttachments(listOf(uri))
+    }
+
+    fun openCamera() {
+        attachmentsOpen = false
+        val uri = runCatching { newCameraUri(context) }.getOrNull() ?: return
+        pendingCameraUri = uri
+        cameraLauncher.launch(uri)
+    }
+
+    fun sendPrompt(prompt: String, attachments: List<MorrowAttachment>) {
         val targetChatId = activeId
-        if (prompt.isBlank() || targetChatId in loadingConversationIds) return
+        if ((prompt.isBlank() && attachments.isEmpty()) || targetChatId in loadingConversationIds) return
 
         messagesByConversation[targetChatId] = messagesByConversation[targetChatId].orEmpty() +
             MorrowChatMessage(
                 id = "user_${System.currentTimeMillis()}",
                 text = prompt,
-                sender = MorrowSender.USER
+                sender = MorrowSender.USER,
+                attachments = attachments
             )
 
         val conversationIndex = conversations.indexOfFirst { it.id == targetChatId }
         if (conversationIndex >= 0 && conversations[conversationIndex].title == "New conversation") {
+            val source = prompt.ifBlank { attachments.firstOrNull()?.name ?: "Attachment" }
             conversations[conversationIndex] = conversations[conversationIndex].copy(
-                title = prompt.take(34).let { if (prompt.length > 34) "$it…" else it }
+                title = source.take(34).let { if (source.length > 34) "$it…" else it }
             )
         }
 
         loadingConversationIds = loadingConversationIds + targetChatId
-        scope.launch {
-            val reply = fetchMorrowReply(prompt)
-            // The chat may have been cleared while the request was running.
-            if (messagesByConversation.containsKey(targetChatId)) {
-                messagesByConversation[targetChatId] = messagesByConversation[targetChatId].orEmpty() +
-                    MorrowChatMessage(
-                        id = "assistant_${System.currentTimeMillis()}",
-                        text = reply,
-                        sender = MorrowSender.ASSISTANT
-                    )
+        val job = scope.launch {
+            try {
+                val reply = fetchMorrowReply(prompt, attachments)
+                // The chat may have been cleared while the request was running.
+                if (messagesByConversation.containsKey(targetChatId)) {
+                    val replyId = "assistant_${System.currentTimeMillis()}"
+                    messagesByConversation[targetChatId] = messagesByConversation[targetChatId].orEmpty() +
+                        MorrowChatMessage(id = replyId, text = reply, sender = MorrowSender.ASSISTANT)
+                    if (targetChatId == activeId) {
+                        typingSkip = false
+                        typingMessageId = replyId
+                    }
+                }
+            } finally {
+                generationJobs.remove(targetChatId)
+                loadingConversationIds = loadingConversationIds - targetChatId
             }
-            loadingConversationIds = loadingConversationIds - targetChatId
         }
+        generationJobs[targetChatId] = job
     }
 
     fun sendInput() {
-        if (activeId in loadingConversationIds) return
+        if (activeId in loadingConversationIds || typingMessageId != null) return
         val prompt = input.trim()
-        if (prompt.isBlank()) return
+        val attachments = pendingAttachments
+        if (prompt.isBlank() && attachments.isEmpty()) return
         input = ""
-        sendPrompt(prompt)
+        pendingAttachments = emptyList()
+        attachmentsOpen = false
+        sendPrompt(prompt, attachments)
     }
 
-    /** Removes the last user message and everything after it, returning its text. */
-    fun takeLastPrompt(): String? {
+    /** Removes the last user message and everything after it, and returns that message. */
+    fun takeLastUserMessage(): MorrowChatMessage? {
         val chatId = activeId
         if (chatId in loadingConversationIds) return null
         val messages = messagesByConversation[chatId].orEmpty()
         val lastUser = messages.indexOfLast { it.sender == MorrowSender.USER }
         if (lastUser < 0) return null
         messagesByConversation[chatId] = messages.subList(0, lastUser).toList()
-        return messages[lastUser].text
+        return messages[lastUser]
     }
 
     fun regenerateLast() {
-        takeLastPrompt()?.let { sendPrompt(it) }
+        typingMessageId = null
+        typingSkip = false
+        takeLastUserMessage()?.let { sendPrompt(it.text, it.attachments) }
     }
 
     fun editLast() {
-        takeLastPrompt()?.let { input = it }
+        takeLastUserMessage()?.let {
+            input = it.text
+            pendingAttachments = it.attachments
+        }
+    }
+
+    /**
+     * Stop button. While the reply is typing out, it shows the full reply at once.
+     * While the request is still running, it cancels the request and puts your message back in the composer.
+     */
+    fun stopGeneration() {
+        if (typingMessageId != null) {
+            typingSkip = true
+            return
+        }
+        val chatId = activeId
+        generationJobs.remove(chatId)?.cancel()
+        loadingConversationIds = loadingConversationIds - chatId
+        takeLastUserMessage()?.let {
+            input = it.text
+            pendingAttachments = it.attachments
+        }
+    }
+
+    fun onTypingDone() {
+        typingMessageId = null
+        typingSkip = false
+    }
+
+    fun setFeedback(message: MorrowChatMessage, value: Int) {
+        val chatId = activeId
+        messagesByConversation[chatId] = messagesByConversation[chatId].orEmpty().map { m ->
+            if (m.id == message.id) m.copy(feedback = if (m.feedback == value) 0 else value) else m
+        }
     }
 
     fun copyText(text: String) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("Morrow reply", text))
+        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
     }
 
     fun shareText(text: String) {
@@ -629,7 +792,25 @@ private fun MorrowMainScreen() {
         context.startActivity(Intent.createChooser(intent, "Share reply"))
     }
 
+    fun toggleSpeak(message: MorrowChatMessage) {
+        val engine = speaker
+        if (engine == null) {
+            Toast.makeText(context, "Text to speech isn't ready yet", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (speakingId == message.id) {
+            engine.stop()
+            speakingId = null
+            return
+        }
+        engine.stop()
+        engine.speak(plainText(message.text), message.id)
+        speakingId = message.id
+    }
+
     fun clearAllChats() {
+        generationJobs.values.forEach { it.cancel() }
+        generationJobs.clear()
         conversations.clear()
         messagesByConversation.clear()
         conversations.add(MorrowConversationSession(WELCOME_ID, "New conversation"))
@@ -637,6 +818,9 @@ private fun MorrowMainScreen() {
         activeId = WELCOME_ID
         loadingConversationIds = emptySet()
         input = ""
+        pendingAttachments = emptyList()
+        typingMessageId = null
+        typingSkip = false
     }
 
     CompositionLocalProvider(LocalMorrowAccent provides accent) {
@@ -727,6 +911,10 @@ private fun MorrowMainScreen() {
                                         .clickable {
                                             activeId = chat.id
                                             input = ""
+                                            pendingAttachments = emptyList()
+                                            attachmentsOpen = false
+                                            typingMessageId = null
+                                            typingSkip = false
                                             scope.launch { drawerState.close() }
                                         }
                                         .padding(horizontal = 11.dp, vertical = 12.dp),
@@ -814,10 +1002,16 @@ private fun MorrowMainScreen() {
                                     isLoading = isLoading,
                                     listState = listState,
                                     loadingKey = "loading_$activeId",
-                                    onCopy = { copyText(it) },
-                                    onShare = { shareText(it) },
+                                    typingMessageId = typingMessageId,
+                                    typingSkip = typingSkip,
+                                    speakingId = speakingId,
+                                    onCopy = { copyText(it.text) },
+                                    onShare = { shareText(it.text) },
+                                    onSpeak = { toggleSpeak(it) },
+                                    onFeedback = { message, value -> setFeedback(message, value) },
                                     onRegenerate = { regenerateLast() },
-                                    onEdit = { editLast() }
+                                    onEdit = { editLast() },
+                                    onTypingDone = { onTypingDone() }
                                 )
                             }
                         }
@@ -826,9 +1020,26 @@ private fun MorrowMainScreen() {
                     MorrowComposer(
                         inputText = input,
                         isLoading = isLoading,
+                        isTyping = isTyping,
+                        attachments = pendingAttachments,
+                        attachmentsOpen = attachmentsOpen,
                         voice = voice,
                         onTextChanged = { input = it },
-                        onSend = { sendInput() }
+                        onToggleAttachments = { attachmentsOpen = !attachmentsOpen },
+                        onPickPhotos = {
+                            attachmentsOpen = false
+                            photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        },
+                        onPickFiles = {
+                            attachmentsOpen = false
+                            filePicker.launch(arrayOf("*/*"))
+                        },
+                        onCamera = { openCamera() },
+                        onRemoveAttachment = { index ->
+                            pendingAttachments = pendingAttachments.filterIndexed { i, _ -> i != index }
+                        },
+                        onSend = { sendInput() },
+                        onStop = { stopGeneration() }
                     )
                     Text(
                         "Morrow can make mistakes. Check important information.",
@@ -913,7 +1124,7 @@ private fun WelcomeHero(
         Crossfade(
             targetState = clock.phase,
             modifier = Modifier
-                .align(Alignment.TopCenter)
+                .align(androidx.compose.ui.Alignment.TopCenter)
                 .fillMaxWidth()
                 .padding(top = 36.dp, start = 24.dp, end = 24.dp),
             label = "heroText"
@@ -947,7 +1158,7 @@ private fun WelcomeHero(
 
         Column(
             modifier = Modifier
-                .align(Alignment.BottomCenter)
+                .align(androidx.compose.ui.Alignment.BottomCenter)
                 .fillMaxWidth()
                 .padding(bottom = 18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -1198,10 +1409,16 @@ private fun MessageList(
     isLoading: Boolean,
     listState: LazyListState,
     loadingKey: String,
-    onCopy: (String) -> Unit,
-    onShare: (String) -> Unit,
+    typingMessageId: String?,
+    typingSkip: Boolean,
+    speakingId: String?,
+    onCopy: (MorrowChatMessage) -> Unit,
+    onShare: (MorrowChatMessage) -> Unit,
+    onSpeak: (MorrowChatMessage) -> Unit,
+    onFeedback: (MorrowChatMessage, Int) -> Unit,
     onRegenerate: () -> Unit,
-    onEdit: () -> Unit
+    onEdit: () -> Unit,
+    onTypingDone: () -> Unit
 ) {
     val lastUserIndex = messages.indexOfLast { it.sender == MorrowSender.USER }
     val lastIndex = messages.lastIndex
@@ -1217,10 +1434,16 @@ private fun MessageList(
                 message = chatMessage,
                 canEdit = !isLoading && index == lastUserIndex,
                 canRegenerate = !isLoading && index == lastIndex && chatMessage.sender == MorrowSender.ASSISTANT,
-                onCopy = { onCopy(chatMessage.text) },
-                onShare = { onShare(chatMessage.text) },
+                isTyping = chatMessage.id == typingMessageId,
+                typingSkip = typingSkip,
+                isSpeaking = chatMessage.id == speakingId,
+                onCopy = { onCopy(chatMessage) },
+                onShare = { onShare(chatMessage) },
+                onSpeak = { onSpeak(chatMessage) },
+                onFeedback = { onFeedback(chatMessage, it) },
                 onRegenerate = onRegenerate,
-                onEdit = onEdit
+                onEdit = onEdit,
+                onTypingDone = onTypingDone
             )
         }
         if (isLoading) {
@@ -1236,10 +1459,16 @@ private fun MorrowMessageRow(
     message: MorrowChatMessage,
     canEdit: Boolean,
     canRegenerate: Boolean,
+    isTyping: Boolean,
+    typingSkip: Boolean,
+    isSpeaking: Boolean,
     onCopy: () -> Unit,
     onShare: () -> Unit,
+    onSpeak: () -> Unit,
+    onFeedback: (Int) -> Unit,
     onRegenerate: () -> Unit,
-    onEdit: () -> Unit
+    onEdit: () -> Unit,
+    onTypingDone: () -> Unit
 ) {
     val accent = LocalMorrowAccent.current
 
@@ -1258,18 +1487,32 @@ private fun MorrowMessageRow(
     ) {
         if (message.sender == MorrowSender.USER) {
             Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
-                Box(
-                    modifier = Modifier
-                        .widthIn(max = 300.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(accent, lerp(accent, Color.Black, 0.45f))
+                if (message.attachments.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.widthIn(max = 300.dp),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        message.attachments.forEach { attachment ->
+                            AttachmentChip(attachment = attachment, onRemove = null)
+                            Spacer(Modifier.width(6.dp))
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+                if (message.text.isNotBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .widthIn(max = 300.dp)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(accent, lerp(accent, Color.Black, 0.45f))
+                                )
                             )
-                        )
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                ) {
-                    Text(message.text, color = Color.White, fontSize = 15.sp, lineHeight = 23.sp)
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                    ) {
+                        Text(message.text, color = Color.White, fontSize = 15.sp, lineHeight = 23.sp)
+                    }
                 }
                 if (canEdit) {
                     Spacer(Modifier.height(6.dp))
@@ -1298,20 +1541,95 @@ private fun MorrowMessageRow(
                         .border(1.dp, MorrowBorder.copy(alpha = 0.8f), RoundedCornerShape(18.dp))
                         .padding(horizontal = 16.dp, vertical = 14.dp)
                 ) {
-                    MorrowMarkdown(text = message.text)
-                }
-                Row(
-                    modifier = Modifier.padding(top = 8.dp, start = 2.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    MessageAction(label = "Copy", onClick = onCopy)
-                    MessageAction(label = "Share", onClick = onShare)
-                    if (canRegenerate) {
-                        MessageAction(label = "Regenerate", onClick = onRegenerate)
+                    if (isTyping) {
+                        TypewriterMarkdown(
+                            text = message.text,
+                            skipRequested = typingSkip,
+                            onFinished = onTypingDone
+                        )
+                    } else {
+                        MorrowMarkdown(text = message.text)
                     }
+                }
+                if (!isTyping) {
+                    MessageActionRow(
+                        message = message,
+                        isSpeaking = isSpeaking,
+                        canRegenerate = canRegenerate,
+                        onCopy = onCopy,
+                        onShare = onShare,
+                        onSpeak = onSpeak,
+                        onFeedback = onFeedback,
+                        onRegenerate = onRegenerate
+                    )
                 }
             }
         }
+    }
+}
+
+/** Copy, share, read aloud, thumbs up/down, and regenerate, shown under each reply. */
+@Composable
+private fun MessageActionRow(
+    message: MorrowChatMessage,
+    isSpeaking: Boolean,
+    canRegenerate: Boolean,
+    onCopy: () -> Unit,
+    onShare: () -> Unit,
+    onSpeak: () -> Unit,
+    onFeedback: (Int) -> Unit,
+    onRegenerate: () -> Unit
+) {
+    val accent = LocalMorrowAccent.current
+    Row(
+        modifier = Modifier.padding(top = 6.dp, start = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        ActionIcon(onClick = onCopy) {
+            CopyIcon(modifier = Modifier.size(18.dp), tint = MorrowMuted)
+        }
+        ActionIcon(onClick = onShare) {
+            ShareIcon(modifier = Modifier.size(18.dp), tint = MorrowMuted)
+        }
+        ActionIcon(onClick = onSpeak) {
+            if (isSpeaking) {
+                StopSquareIcon(modifier = Modifier.size(16.dp), tint = accent)
+            } else {
+                SpeakIcon(modifier = Modifier.size(18.dp), tint = MorrowMuted)
+            }
+        }
+        ActionIcon(onClick = { onFeedback(1) }) {
+            ThumbIcon(
+                down = false,
+                modifier = Modifier.size(18.dp),
+                tint = if (message.feedback == 1) accent else MorrowMuted
+            )
+        }
+        ActionIcon(onClick = { onFeedback(-1) }) {
+            ThumbIcon(
+                down = true,
+                modifier = Modifier.size(18.dp),
+                tint = if (message.feedback == -1) accent else MorrowMuted
+            )
+        }
+        if (canRegenerate) {
+            ActionIcon(onClick = onRegenerate) {
+                RefreshIcon(modifier = Modifier.size(18.dp), tint = MorrowMuted)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActionIcon(onClick: () -> Unit, content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(34.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        content()
     }
 }
 
@@ -1327,6 +1645,33 @@ private fun MessageAction(label: String, onClick: () -> Unit) {
     ) {
         Text(label, color = accent, fontSize = 12.sp, fontWeight = FontWeight.Medium)
     }
+}
+
+/** Reveals a reply character by character. Skip shows the full text at once. */
+@Composable
+private fun TypewriterMarkdown(
+    text: String,
+    skipRequested: Boolean,
+    onFinished: () -> Unit
+) {
+    val currentOnFinished by rememberUpdatedState(onFinished)
+    var shown by remember(text) { mutableIntStateOf(0) }
+
+    LaunchedEffect(text, skipRequested) {
+        if (skipRequested) shown = text.length
+        val step = when {
+            text.length > 1200 -> 6
+            text.length > 400 -> 3
+            else -> 2
+        }
+        while (shown < text.length) {
+            delay(14L)
+            shown = minOf(text.length, shown + step)
+        }
+        currentOnFinished()
+    }
+
+    MorrowMarkdown(text = text.take(shown))
 }
 
 @Composable
@@ -1365,6 +1710,604 @@ private fun ThinkingIndicator() {
         }
         Spacer(Modifier.width(9.dp))
         Text("Thinking…", color = MorrowMuted, fontSize = 13.sp)
+    }
+}
+
+// ---------- Attachments ----------
+
+@Composable
+private fun AttachmentChip(attachment: MorrowAttachment, onRemove: (() -> Unit)?) {
+    val accent = LocalMorrowAccent.current
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(MorrowSurface)
+            .border(1.dp, MorrowBorder, RoundedCornerShape(14.dp))
+            .padding(
+                start = 6.dp,
+                end = if (onRemove != null) 4.dp else 10.dp,
+                top = 6.dp,
+                bottom = 6.dp
+            ),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        val thumb = attachment.thumbnail
+        if (thumb != null) {
+            Image(
+                bitmap = thumb,
+                contentDescription = attachment.name,
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(10.dp))
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MorrowChipFill),
+                contentAlignment = Alignment.Center
+            ) {
+                FileIcon(modifier = Modifier.size(18.dp), tint = accent)
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            attachment.name,
+            color = MorrowText,
+            fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.widthIn(max = 150.dp)
+        )
+        if (onRemove != null) {
+            Spacer(Modifier.width(4.dp))
+            Box(
+                modifier = Modifier
+                    .size(26.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onRemove),
+                contentAlignment = Alignment.Center
+            ) {
+                CloseIcon(modifier = Modifier.size(12.dp), tint = MorrowMuted)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AttachmentPanel(
+    onPhotos: () -> Unit,
+    onFiles: () -> Unit,
+    onCamera: () -> Unit
+) {
+    val accent = LocalMorrowAccent.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        AttachOption(label = "Photos", onClick = onPhotos, modifier = Modifier.weight(1f)) {
+            PhotoIcon(modifier = Modifier.size(22.dp), tint = accent)
+        }
+        AttachOption(label = "Files", onClick = onFiles, modifier = Modifier.weight(1f)) {
+            FileIcon(modifier = Modifier.size(22.dp), tint = accent)
+        }
+        AttachOption(label = "Camera", onClick = onCamera, modifier = Modifier.weight(1f)) {
+            CameraIcon(modifier = Modifier.size(22.dp), tint = accent)
+        }
+    }
+}
+
+@Composable
+private fun AttachOption(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: @Composable () -> Unit
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(MorrowSurface)
+            .border(1.dp, MorrowBorder, RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(MorrowChipFill),
+            contentAlignment = Alignment.Center
+        ) {
+            icon()
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(label, color = MorrowText, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+// ---------- Voice input ----------
+
+private class VoiceInputController(
+    val available: Boolean,
+    val listening: Boolean,
+    val toggle: () -> Unit
+)
+
+@Composable
+private fun rememberVoiceInput(onResult: (String) -> Unit): VoiceInputController {
+    val context = LocalContext.current
+    val available = remember { SpeechRecognizer.isRecognitionAvailable(context) }
+    var listening by remember { mutableStateOf(false) }
+    val currentOnResult by rememberUpdatedState(onResult)
+    val recognizer = remember(available) {
+        if (available) SpeechRecognizer.createSpeechRecognizer(context) else null
+    }
+
+    DisposableEffect(recognizer) {
+        recognizer?.setRecognitionListener(object : RecognitionListener {
+            override fun onReadyForSpeech(params: Bundle?) {}
+            override fun onBeginningOfSpeech() {}
+            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onBufferReceived(buffer: ByteArray?) {}
+            override fun onEndOfSpeech() { listening = false }
+            override fun onError(error: Int) { listening = false }
+            override fun onPartialResults(partialResults: Bundle?) {}
+            override fun onEvent(eventType: Int, params: Bundle?) {}
+            override fun onResults(results: Bundle?) {
+                listening = false
+                results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    ?.firstOrNull()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { currentOnResult(it) }
+            }
+        })
+        onDispose { recognizer?.destroy() }
+    }
+
+    fun start() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        }
+        recognizer?.startListening(intent)
+        listening = true
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) start()
+    }
+
+    fun toggle() {
+        if (recognizer == null) return
+        if (listening) {
+            recognizer.stopListening()
+            listening = false
+            return
+        }
+        if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            start()
+        } else {
+            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    return VoiceInputController(available = available, listening = listening, toggle = { toggle() })
+}
+
+// ---------- Text to speech ----------
+
+private class MorrowSpeaker(private val engine: TextToSpeech) {
+    fun speak(text: String, utteranceId: String) {
+        engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+    }
+
+    fun stop() {
+        engine.stop()
+    }
+}
+
+@Composable
+private fun rememberSpeaker(onFinished: () -> Unit): MorrowSpeaker? {
+    val context = LocalContext.current
+    val currentOnFinished by rememberUpdatedState(onFinished)
+    val handler = remember { Handler(Looper.getMainLooper()) }
+    val speakerState = remember { mutableStateOf<MorrowSpeaker?>(null) }
+
+    DisposableEffect(context) {
+        val engineRef = arrayOfNulls<TextToSpeech>(1)
+        val engine = TextToSpeech(context) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                engineRef[0]?.setLanguage(Locale.getDefault())
+            }
+        }
+        engineRef[0] = engine
+        engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) {}
+            override fun onDone(utteranceId: String?) {
+                handler.post { currentOnFinished() }
+            }
+            override fun onError(utteranceId: String?) {
+                handler.post { currentOnFinished() }
+            }
+        })
+        speakerState.value = MorrowSpeaker(engine)
+        onDispose {
+            speakerState.value = null
+            engine.stop()
+            engine.shutdown()
+        }
+    }
+
+    return speakerState.value
+}
+
+/** Strips markdown symbols so the voice doesn't read them out. */
+private fun plainText(text: String): String =
+    text.replace(Regex("[*_`#>|~\\[\\]]"), " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+
+// ---------- Attachment preparation ----------
+
+private fun newCameraUri(context: Context): Uri {
+    val dir = File(context.cacheDir, "camera").apply { mkdirs() }
+    val file = File(dir, "photo_${System.currentTimeMillis()}.jpg")
+    return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+}
+
+private fun queryDisplayName(context: Context, uri: Uri): String? =
+    context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+        ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+
+private fun scaleToFit(bitmap: Bitmap, maxSide: Int): Bitmap {
+    val largest = maxOf(bitmap.width, bitmap.height)
+    if (largest <= maxSide) return bitmap
+    val ratio = maxSide.toFloat() / largest
+    return Bitmap.createScaledBitmap(
+        bitmap,
+        (bitmap.width * ratio).toInt().coerceAtLeast(1),
+        (bitmap.height * ratio).toInt().coerceAtLeast(1),
+        true
+    )
+}
+
+/**
+ * Reads a picked file. Images are shrunk and sent as JPEG base64.
+ * Text files are read (up to a limit). Other files only send their name.
+ */
+private fun prepareAttachment(context: Context, uri: Uri): MorrowAttachment? {
+    val resolver = context.contentResolver
+    val mime = resolver.getType(uri) ?: "application/octet-stream"
+    val name = queryDisplayName(context, uri) ?: "attachment"
+
+    if (mime.startsWith("image/")) {
+        val original = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) } ?: return null
+        val scaled = scaleToFit(original, MAX_IMAGE_SIDE)
+        val out = ByteArrayOutputStream()
+        scaled.compress(Bitmap.CompressFormat.JPEG, 82, out)
+        val thumb = scaleToFit(scaled, 160).asImageBitmap()
+        return MorrowAttachment(
+            name = name,
+            mime = "image/jpeg",
+            isImage = true,
+            payload = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP),
+            thumbnail = thumb
+        )
+    }
+
+    val text = if (mime.startsWith("text/") || mime == "application/json") {
+        resolver.openInputStream(uri)?.use { stream ->
+            val bytes = stream.readBytes()
+            String(bytes, 0, minOf(bytes.size, MAX_TEXT_BYTES), Charsets.UTF_8)
+        }
+    } else {
+        null
+    }
+    return MorrowAttachment(name = name, mime = mime, isImage = false, payload = text)
+}
+
+// ---------- Composer ----------
+
+@Composable
+private fun MorrowComposer(
+    inputText: String,
+    isLoading: Boolean,
+    isTyping: Boolean,
+    attachments: List<MorrowAttachment>,
+    attachmentsOpen: Boolean,
+    voice: VoiceInputController,
+    onTextChanged: (String) -> Unit,
+    onToggleAttachments: () -> Unit,
+    onPickPhotos: () -> Unit,
+    onPickFiles: () -> Unit,
+    onCamera: () -> Unit,
+    onRemoveAttachment: (Int) -> Unit,
+    onSend: () -> Unit,
+    onStop: () -> Unit
+) {
+    val accent = LocalMorrowAccent.current
+    var focused by remember { mutableStateOf(false) }
+    val busy = isLoading || isTyping
+    val canSend = (inputText.isNotBlank() || attachments.isNotEmpty()) && !busy
+
+    val borderColor by animateColorAsState(
+        targetValue = if (focused) accent.copy(alpha = 0.85f) else MorrowBorder,
+        animationSpec = tween(durationMillis = 250),
+        label = "composerBorder"
+    )
+    val sendTint by animateColorAsState(
+        targetValue = if (busy || canSend) accent else Color(0xFF2A2440),
+        animationSpec = tween(durationMillis = 220),
+        label = "sendTint"
+    )
+    val plusRotation by animateFloatAsState(
+        targetValue = if (attachmentsOpen) 45f else 0f,
+        animationSpec = tween(durationMillis = 220),
+        label = "plusRotation"
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+    ) {
+        if (attachments.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                attachments.forEachIndexed { index, attachment ->
+                    AttachmentChip(
+                        attachment = attachment,
+                        onRemove = { onRemoveAttachment(index) }
+                    )
+                }
+            }
+        }
+
+        AnimatedVisibility(visible = attachmentsOpen) {
+            AttachmentPanel(
+                onPhotos = onPickPhotos,
+                onFiles = onPickFiles,
+                onCamera = onCamera
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(28.dp))
+                .background(MorrowSurface)
+                .border(1.dp, borderColor, RoundedCornerShape(28.dp))
+                .padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = onToggleAttachments,
+                modifier = Modifier.size(40.dp)
+            ) {
+                PlusIcon(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .graphicsLayer { rotationZ = plusRotation },
+                    tint = accent
+                )
+            }
+
+            BasicTextField(
+                value = inputText,
+                onValueChange = onTextChanged,
+                enabled = !isLoading,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 4.dp, vertical = 8.dp)
+                    .onFocusChanged { focused = it.isFocused },
+                textStyle = TextStyle(color = MorrowText, fontSize = 15.sp, lineHeight = 21.sp),
+                cursorBrush = SolidColor(accent),
+                decorationBox = { innerTextField ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (inputText.isEmpty()) {
+                            Text(
+                                when {
+                                    voice.listening -> "Listening…"
+                                    isLoading -> "Thinking…"
+                                    isTyping -> "Morrow is writing…"
+                                    else -> "Message Morrow…"
+                                },
+                                color = MorrowMuted,
+                                fontSize = 14.sp
+                            )
+                        }
+                        innerTextField()
+                    }
+                }
+            )
+
+            if (voice.available) {
+                IconButton(
+                    onClick = voice.toggle,
+                    enabled = !isLoading,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(if (voice.listening) MorrowDanger.copy(alpha = 0.18f) else Color.Transparent)
+                ) {
+                    MicIcon(
+                        tint = if (voice.listening) MorrowDanger else MorrowMuted,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            Spacer(Modifier.width(4.dp))
+            IconButton(
+                onClick = if (busy) onStop else onSend,
+                enabled = busy || canSend,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(sendTint)
+            ) {
+                if (busy) {
+                    StopSquareIcon(
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                } else {
+                    ArrowUpIcon(
+                        tint = if (canSend) Color.White else MorrowMuted,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ---------- Settings ----------
+
+@Composable
+private fun SettingsScreen(
+    landscapeOn: Boolean,
+    onLandscapeChange: (Boolean) -> Unit,
+    accentIndex: Int,
+    onAccentChange: (Int) -> Unit,
+    onClearChats: () -> Unit,
+    onBack: () -> Unit
+) {
+    val accent = LocalMorrowAccent.current
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MorrowBackground)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                BackIcon(tint = MorrowText)
+            }
+            Text("Settings", color = MorrowText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+        ) {
+            SettingsSection(title = "Appearance") {
+                Text("Accent color", color = MorrowText, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    MorrowAccentChoices.forEachIndexed { index, color ->
+                        val selected = index == accentIndex
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(color)
+                                .border(
+                                    width = if (selected) 3.dp else 0.dp,
+                                    color = if (selected) MorrowText else Color.Transparent,
+                                    shape = CircleShape
+                                )
+                                .clickable { onAccentChange(index) }
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    MorrowAccentNames[accentIndex.coerceIn(0, MorrowAccentNames.lastIndex)],
+                    color = MorrowMuted,
+                    fontSize = 12.sp
+                )
+            }
+
+            SettingsSection(title = "Animation") {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Animated landscape", color = MorrowText, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            "Turn off to save battery. The sky still changes with the time of day.",
+                            color = MorrowMuted,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Switch(
+                        checked = landscapeOn,
+                        onCheckedChange = onLandscapeChange,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = accent,
+                            uncheckedThumbColor = MorrowMuted,
+                            uncheckedTrackColor = MorrowChipFill,
+                            uncheckedBorderColor = MorrowBorder
+                        )
+                    )
+                }
+            }
+
+            SettingsSection(title = "Chats") {
+                Text(
+                    "Clear all chats",
+                    color = MorrowDanger,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onClearChats)
+                        .padding(vertical = 4.dp)
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "Deletes every conversation saved on this device.",
+                    color = MorrowMuted,
+                    fontSize = 12.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 18.dp)) {
+        Text(
+            title.uppercase(),
+            color = MorrowMuted,
+            fontSize = 10.sp,
+            letterSpacing = 1.5.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(MorrowSurface)
+                .border(1.dp, MorrowBorder, RoundedCornerShape(16.dp))
+                .padding(16.dp),
+            content = content
+        )
     }
 }
 
@@ -1843,317 +2786,6 @@ private fun AnnotatedString.Builder.appendInline(text: String, depth: Int, accen
     }
 }
 
-// ---------- Voice input ----------
-
-private class VoiceInputController(
-    val available: Boolean,
-    val listening: Boolean,
-    val toggle: () -> Unit
-)
-
-@Composable
-private fun rememberVoiceInput(onResult: (String) -> Unit): VoiceInputController {
-    val context = LocalContext.current
-    val available = remember { SpeechRecognizer.isRecognitionAvailable(context) }
-    var listening by remember { mutableStateOf(false) }
-    val currentOnResult by rememberUpdatedState(onResult)
-    val recognizer = remember(available) {
-        if (available) SpeechRecognizer.createSpeechRecognizer(context) else null
-    }
-
-    DisposableEffect(recognizer) {
-        recognizer?.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) {}
-            override fun onBeginningOfSpeech() {}
-            override fun onRmsChanged(rmsdB: Float) {}
-            override fun onBufferReceived(buffer: ByteArray?) {}
-            override fun onEndOfSpeech() { listening = false }
-            override fun onError(error: Int) { listening = false }
-            override fun onPartialResults(partialResults: Bundle?) {}
-            override fun onEvent(eventType: Int, params: Bundle?) {}
-            override fun onResults(results: Bundle?) {
-                listening = false
-                results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    ?.firstOrNull()
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let { currentOnResult(it) }
-            }
-        })
-        onDispose { recognizer?.destroy() }
-    }
-
-    fun start() {
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        }
-        recognizer?.startListening(intent)
-        listening = true
-    }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) start()
-    }
-
-    fun toggle() {
-        if (recognizer == null) return
-        if (listening) {
-            recognizer.stopListening()
-            listening = false
-            return
-        }
-        if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            start()
-        } else {
-            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        }
-    }
-
-    return VoiceInputController(available = available, listening = listening, toggle = { toggle() })
-}
-
-// ---------- Composer ----------
-
-@Composable
-private fun MorrowComposer(
-    inputText: String,
-    isLoading: Boolean,
-    voice: VoiceInputController,
-    onTextChanged: (String) -> Unit,
-    onSend: () -> Unit
-) {
-    val accent = LocalMorrowAccent.current
-    var focused by remember { mutableStateOf(false) }
-    val canSend = inputText.isNotBlank() && !isLoading
-
-    val borderColor by animateColorAsState(
-        targetValue = if (focused) accent.copy(alpha = 0.85f) else MorrowBorder,
-        animationSpec = tween(durationMillis = 250),
-        label = "composerBorder"
-    )
-    val sendTint by animateColorAsState(
-        targetValue = if (canSend) accent else Color(0xFF2A2440),
-        animationSpec = tween(durationMillis = 220),
-        label = "sendTint"
-    )
-    val sendScale by animateFloatAsState(
-        targetValue = if (canSend) 1f else 0.9f,
-        animationSpec = tween(durationMillis = 200),
-        label = "sendScale"
-    )
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 8.dp)
-            .clip(RoundedCornerShape(28.dp))
-            .background(MorrowSurface)
-            .border(1.dp, borderColor, RoundedCornerShape(28.dp))
-            .padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        BasicTextField(
-            value = inputText,
-            onValueChange = onTextChanged,
-            enabled = !isLoading,
-            modifier = Modifier
-                .weight(1f)
-                .padding(vertical = 8.dp)
-                .onFocusChanged { focused = it.isFocused },
-            textStyle = TextStyle(color = MorrowText, fontSize = 15.sp, lineHeight = 21.sp),
-            cursorBrush = SolidColor(accent),
-            decorationBox = { innerTextField ->
-                Box(contentAlignment = Alignment.CenterStart) {
-                    if (inputText.isEmpty()) {
-                        Text(
-                            when {
-                                voice.listening -> "Listening…"
-                                isLoading -> "Thinking…"
-                                else -> "Message Morrow…"
-                            },
-                            color = MorrowMuted,
-                            fontSize = 14.sp
-                        )
-                    }
-                    innerTextField()
-                }
-            }
-        )
-
-        if (voice.available) {
-            Spacer(Modifier.width(4.dp))
-            IconButton(
-                onClick = voice.toggle,
-                enabled = !isLoading,
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(if (voice.listening) MorrowDanger.copy(alpha = 0.18f) else Color.Transparent)
-            ) {
-                MicIcon(tint = if (voice.listening) MorrowDanger else MorrowMuted, modifier = Modifier.size(20.dp))
-            }
-        }
-
-        Spacer(Modifier.width(4.dp))
-        IconButton(
-            onClick = onSend,
-            enabled = canSend,
-            modifier = Modifier
-                .size(40.dp)
-                .graphicsLayer {
-                    scaleX = sendScale
-                    scaleY = sendScale
-                }
-                .clip(CircleShape)
-                .background(sendTint)
-        ) {
-            ArrowUpIcon(
-                tint = if (canSend) Color.White else MorrowMuted,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-    }
-}
-
-// ---------- Settings ----------
-
-@Composable
-private fun SettingsScreen(
-    landscapeOn: Boolean,
-    onLandscapeChange: (Boolean) -> Unit,
-    accentIndex: Int,
-    onAccentChange: (Int) -> Unit,
-    onClearChats: () -> Unit,
-    onBack: () -> Unit
-) {
-    val accent = LocalMorrowAccent.current
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MorrowBackground)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp)
-                .padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onBack) {
-                BackIcon(tint = MorrowText)
-            }
-            Text("Settings", color = MorrowText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 8.dp)
-        ) {
-            SettingsSection(title = "Appearance") {
-                Text("Accent color", color = MorrowText, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    MorrowAccentChoices.forEachIndexed { index, color ->
-                        val selected = index == accentIndex
-                        Box(
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clip(CircleShape)
-                                .background(color)
-                                .border(
-                                    width = if (selected) 3.dp else 0.dp,
-                                    color = if (selected) MorrowText else Color.Transparent,
-                                    shape = CircleShape
-                                )
-                                .clickable { onAccentChange(index) }
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    MorrowAccentNames[accentIndex.coerceIn(0, MorrowAccentNames.lastIndex)],
-                    color = MorrowMuted,
-                    fontSize = 12.sp
-                )
-            }
-
-            SettingsSection(title = "Animation") {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Animated landscape", color = MorrowText, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            "Turn off to save battery. The sky still changes with the time of day.",
-                            color = MorrowMuted,
-                            fontSize = 12.sp,
-                            lineHeight = 17.sp
-                        )
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Switch(
-                        checked = landscapeOn,
-                        onCheckedChange = onLandscapeChange,
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = accent,
-                            uncheckedThumbColor = MorrowMuted,
-                            uncheckedTrackColor = MorrowChipFill,
-                            uncheckedBorderColor = MorrowBorder
-                        )
-                    )
-                }
-            }
-
-            SettingsSection(title = "Chats") {
-                Text(
-                    "Clear all chats",
-                    color = MorrowDanger,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onClearChats)
-                        .padding(vertical = 4.dp)
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    "Deletes every conversation saved on this device.",
-                    color = MorrowMuted,
-                    fontSize = 12.sp
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().padding(top = 18.dp)) {
-        Text(
-            title.uppercase(),
-            color = MorrowMuted,
-            fontSize = 10.sp,
-            letterSpacing = 1.5.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
-        )
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(MorrowSurface)
-                .border(1.dp, MorrowBorder, RoundedCornerShape(16.dp))
-                .padding(16.dp),
-            content = content
-        )
-    }
-}
-
 // ---------- Shared pieces ----------
 
 @Composable
@@ -2344,6 +2976,158 @@ private fun ArrowUpIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tin
     }
 }
 
+@Composable
+private fun StopSquareIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
+    MorrowIcon(modifier = modifier, tint = tint) { color, _ ->
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(size.width * 0.2f, size.height * 0.2f),
+            size = Size(size.width * 0.6f, size.height * 0.6f),
+            cornerRadius = CornerRadius(size.minDimension * 0.12f)
+        )
+    }
+}
+
+@Composable
+private fun CopyIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
+    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(size.width * 0.36f, size.height * 0.12f),
+            size = Size(size.width * 0.52f, size.height * 0.52f),
+            cornerRadius = CornerRadius(size.minDimension * 0.12f),
+            style = stroke
+        )
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(size.width * 0.12f, size.height * 0.36f),
+            size = Size(size.width * 0.52f, size.height * 0.52f),
+            cornerRadius = CornerRadius(size.minDimension * 0.12f),
+            style = stroke
+        )
+    }
+}
+
+@Composable
+private fun ShareIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
+    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
+        fracLine(color, stroke, 0.5f, 0.14f, 0.5f, 0.62f)
+        fracPolyline(color, stroke, 0.32f to 0.3f, 0.5f to 0.12f, 0.68f to 0.3f)
+        fracPolyline(color, stroke, 0.22f to 0.46f, 0.22f to 0.88f, 0.78f to 0.88f, 0.78f to 0.46f)
+    }
+}
+
+@Composable
+private fun SpeakIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
+    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
+        fracPolyline(
+            color, stroke,
+            0.3f to 0.18f, 0.8f to 0.5f, 0.3f to 0.82f, 0.3f to 0.18f
+        )
+    }
+}
+
+@Composable
+private fun ThumbIcon(down: Boolean, modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
+    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
+        fun fy(y: Float): Float = if (down) 1f - y else y
+        val w = size.width
+        val h = size.height
+        val body = Path().apply {
+            moveTo(w * 0.28f, h * fy(0.46f))
+            lineTo(w * 0.44f, h * fy(0.14f))
+            quadraticBezierTo(w * 0.48f, h * fy(0.06f), w * 0.56f, h * fy(0.12f))
+            lineTo(w * 0.52f, h * fy(0.40f))
+            lineTo(w * 0.84f, h * fy(0.40f))
+            quadraticBezierTo(w * 0.92f, h * fy(0.42f), w * 0.90f, h * fy(0.52f))
+            lineTo(w * 0.82f, h * fy(0.82f))
+            quadraticBezierTo(w * 0.79f, h * fy(0.92f), w * 0.68f, h * fy(0.92f))
+            lineTo(w * 0.28f, h * fy(0.92f))
+            close()
+        }
+        drawPath(path = body, color = color, style = stroke)
+        val top = minOf(fy(0.46f), fy(0.92f))
+        val bottom = maxOf(fy(0.46f), fy(0.92f))
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(w * 0.10f, h * top),
+            size = Size(w * 0.18f, h * (bottom - top)),
+            cornerRadius = CornerRadius(w * 0.04f),
+            style = stroke
+        )
+    }
+}
+
+@Composable
+private fun RefreshIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
+    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
+        drawArc(
+            color = color,
+            startAngle = -60f,
+            sweepAngle = 290f,
+            useCenter = false,
+            topLeft = Offset(size.width * 0.14f, size.height * 0.14f),
+            size = Size(size.width * 0.72f, size.height * 0.72f),
+            style = stroke
+        )
+        fracPolyline(color, stroke, 0.8f to 0.1f, 0.8f to 0.36f, 0.54f to 0.36f)
+    }
+}
+
+@Composable
+private fun PhotoIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
+    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(size.width * 0.12f, size.height * 0.18f),
+            size = Size(size.width * 0.76f, size.height * 0.64f),
+            cornerRadius = CornerRadius(size.minDimension * 0.12f),
+            style = stroke
+        )
+        drawCircle(
+            color = color,
+            radius = size.width * 0.07f,
+            center = Offset(size.width * 0.66f, size.height * 0.36f),
+            style = stroke
+        )
+        fracPolyline(
+            color, stroke,
+            0.18f to 0.7f, 0.42f to 0.46f, 0.56f to 0.6f, 0.66f to 0.5f, 0.84f to 0.7f
+        )
+    }
+}
+
+@Composable
+private fun FileIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
+    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
+        fracPolyline(
+            color, stroke,
+            0.26f to 0.12f, 0.58f to 0.12f, 0.8f to 0.34f, 0.8f to 0.88f, 0.26f to 0.88f, 0.26f to 0.12f
+        )
+        fracPolyline(color, stroke, 0.58f to 0.12f, 0.58f to 0.34f, 0.8f to 0.34f)
+    }
+}
+
+@Composable
+private fun CameraIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
+    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(size.width * 0.12f, size.height * 0.3f),
+            size = Size(size.width * 0.76f, size.height * 0.5f),
+            cornerRadius = CornerRadius(size.minDimension * 0.1f),
+            style = stroke
+        )
+        fracPolyline(color, stroke, 0.34f to 0.3f, 0.4f to 0.2f, 0.6f to 0.2f, 0.66f to 0.3f)
+        drawCircle(
+            color = color,
+            radius = size.width * 0.14f,
+            center = Offset(size.width * 0.5f, size.height * 0.55f),
+            style = stroke
+        )
+    }
+}
+
 // ---------- Helpers ----------
 
 private fun morrowGreeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
@@ -2355,7 +3139,15 @@ private fun morrowGreeting(): String = when (Calendar.getInstance().get(Calendar
 
 // ---------- Networking ----------
 
-private suspend fun fetchMorrowReply(message: String): String = withContext(Dispatchers.IO) {
+/**
+ * Sends the prompt and any attachments to the Worker.
+ * The JSON adds an "attachments" array when files are included. The Worker must forward
+ * images and text to the model for the model to see them.
+ */
+private suspend fun fetchMorrowReply(
+    message: String,
+    attachments: List<MorrowAttachment>
+): String = withContext(Dispatchers.IO) {
     var connection: HttpURLConnection? = null
     try {
         connection = (URL(MORROW_CHAT_ENDPOINT).openConnection() as HttpURLConnection).apply {
@@ -2367,16 +3159,29 @@ private suspend fun fetchMorrowReply(message: String): String = withContext(Disp
             setRequestProperty("Accept", "application/json")
         }
 
-        val requestBody = JSONObject().put("message", message).toString()
+        val body = JSONObject().put("message", message)
+        if (attachments.isNotEmpty()) {
+            val array = JSONArray()
+            attachments.forEach { a ->
+                val item = JSONObject()
+                    .put("name", a.name)
+                    .put("mime", a.mime)
+                    .put("kind", if (a.isImage) "image" else "file")
+                a.payload?.let { item.put("data", it) }
+                array.put(item)
+            }
+            body.put("attachments", array)
+        }
+
         connection.outputStream.use { output ->
-            output.write(requestBody.toByteArray(Charsets.UTF_8))
+            output.write(body.toString().toByteArray(Charsets.UTF_8))
         }
 
         val statusCode = connection.responseCode
         val responseBody = (if (statusCode in 200..299) connection.inputStream else connection.errorStream)
             ?.bufferedReader(Charsets.UTF_8)
             ?.use { it.readText() }
-            .orEmpty()
+            ?: ""
 
         val json = try {
             JSONObject(responseBody)
@@ -2391,6 +3196,9 @@ private suspend fun fetchMorrowReply(message: String): String = withContext(Disp
 
         json.optString("reply").takeIf { it.isNotBlank() }
             ?: throw IOException("The server returned an empty reply.")
+    } catch (error: CancellationException) {
+        // Stop button pressed: let the coroutine cancel instead of showing an error message.
+        throw error
     } catch (error: Exception) {
         "I couldn't connect to Morrow right now. ${error.message ?: "Please try again."}"
     } finally {
