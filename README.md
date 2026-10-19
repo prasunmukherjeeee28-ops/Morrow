@@ -1,11 +1,15 @@
 <!--
-Morrow project README
+Morrow project README.
 Keep feature status accurate: planned features must not be described as shipped.
 -->
 
 <div align="center">
 
-# MORROW
+<img src="docs/assets/morrow-banner.svg" alt="Morrow — A calmer space to think, create, and explore with AI" width="100%" />
+
+[![Android build](https://github.com/prasunmukherjeeee28-ops/Morrow/actions/workflows/build-apk.yml/badge.svg?branch=main)](https://github.com/prasunmukherjeeee28-ops/Morrow/actions/workflows/build-apk.yml)
+![Kotlin](https://img.shields.io/badge/Kotlin-Android-7F52FF?logo=kotlin&logoColor=white)
+![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?logo=jetpackcompose&logoColor=white)
 
 ### A calmer space to think, create, and explore with AI.
 
@@ -21,17 +25,17 @@ A native Android AI assistant built with **Kotlin** and **Jetpack Compose**, bac
 
 Morrow is an Android-first AI chat app focused on a polished, thoughtful conversation experience. The project combines a native Compose interface with a small server-side API layer, keeping provider credentials out of the Android client.
 
-> Morrow is a work in progress. Some features and authentication flows may still be under development. Check the roadmap and current code before relying on a feature.
+> **Project status:** Morrow is a work in progress. Some features and authentication flows are still under development. Check the current code and build results before relying on any feature.
 
 ## ✨ Highlights
 
 - **Native Android UI** — Kotlin and Jetpack Compose.
 - **Conversation experience** — a custom chat screen with Markdown-style responses and message actions.
-- **AI backend** — requests are routed through a Cloudflare Worker to Groq.
-- **Thoughtful interaction** — features in the app include response controls and read-aloud support.
-- **Automation** — GitHub Actions is used to build the Android project.
+- **AI backend** — chat requests are routed through a Cloudflare Worker to Groq.
+- **Thoughtful interaction** — the app includes response controls and read-aloud support.
+- **Build automation** — GitHub Actions builds the Android project.
 
-Feature availability can change as development continues. Google sign-in and real email-code verification should be considered unfinished until the backend and app flow have been implemented and tested end to end.
+Feature availability can change as development continues. Google sign-in and real email-code verification are not considered complete until the app and server flow have been implemented and tested end to end.
 
 ## 🧱 Architecture
 
