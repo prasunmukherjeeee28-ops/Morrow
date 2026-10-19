@@ -1,124 +1,159 @@
-<!--
-Morrow project README.
-Keep feature status accurate: planned features must not be described as shipped.
--->
+<!-- Morrow README: premium project overview. Keep status accurate; do not claim unfinished auth is shipped. -->
 
 <div align="center">
 
-<img src="docs/assets/morrow-banner.svg" alt="Morrow — A calmer space to think, create, and explore with AI" width="100%" />
+<img src="docs/assets/morrow-banner.svg" alt="Morrow — a calmer space to think, create, and explore with AI" width="100%" />
 
-[![Android build](https://github.com/prasunmukherjeeee28-ops/Morrow/actions/workflows/build-apk.yml/badge.svg?branch=main)](https://github.com/prasunmukherjeeee28-ops/Morrow/actions/workflows/build-apk.yml)
-![Kotlin](https://img.shields.io/badge/Kotlin-Android-7F52FF?logo=kotlin&logoColor=white)
-![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?logo=jetpackcompose&logoColor=white)
+<br/>
 
-### A calmer space to think, create, and explore with AI.
+[![Android CI](https://github.com/prasunmukherjeeee28-ops/Morrow/actions/workflows/build-apk.yml/badge.svg?branch=main)](https://github.com/prasunmukherjeeee28-ops/Morrow/actions/workflows/build-apk.yml)
+[![Kotlin](https://img.shields.io/badge/Kotlin-native-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org/)
+[![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/compose)
+[![Android](https://img.shields.io/badge/Platform-Android-3DDC84?logo=android&logoColor=white)](https://www.android.com/)
 
-A native Android AI assistant built with **Kotlin** and **Jetpack Compose**, backed by a Cloudflare Worker and Groq.
+# MORROW AI
 
-[Source code](https://github.com/prasunmukherjeeee28-ops/Morrow) · [Issues](https://github.com/prasunmukherjeeee28-ops/Morrow/issues) · [Builds](https://github.com/prasunmukherjeeee28-ops/Morrow/actions)
+### Your ideas, in motion.
+
+**A native Android AI companion built for clear conversations, thoughtful interactions, and a polished mobile experience.**
+
+[Explore the code](https://github.com/prasunmukherjeeee28-ops/Morrow) · [Get a build](https://github.com/prasunmukherjeeee28-ops/Morrow/actions) · [Report an issue](https://github.com/prasunmukherjeeee28-ops/Morrow/issues)
 
 </div>
 
 ---
 
-## ✦ What is Morrow?
+> [!NOTE]
+> **Active development:** Morrow is a work in progress. Features and setup may change. Google sign-in and production-grade email verification should be considered unfinished until their complete app-to-server flows are implemented and verified.
 
-Morrow is an Android-first AI chat app focused on a polished, thoughtful conversation experience. The project combines a native Compose interface with a small server-side API layer, keeping provider credentials out of the Android client.
+## ◈ The idea
 
-> **Project status:** Morrow is a work in progress. Some features and authentication flows are still under development. Check the current code and build results before relying on any feature.
+Morrow brings an AI chat experience to Android through a **Kotlin + Jetpack Compose** client and a lightweight **Cloudflare Worker** gateway connected to **Groq**. The client talks to the backend instead of bundling the provider secret into the APK.
 
-## ✨ Highlights
+The goal is simple: a focused, modern chat experience that can keep getting better without turning the app into a maze of screens and settings.
 
-- **Native Android UI** — Kotlin and Jetpack Compose.
-- **Conversation experience** — a custom chat screen with Markdown-style responses and message actions.
-- **AI backend** — chat requests are routed through a Cloudflare Worker to Groq.
-- **Thoughtful interaction** — the app includes response controls and read-aloud support.
-- **Build automation** — GitHub Actions builds the Android project.
+## ✦ Experience
 
-Feature availability can change as development continues. Google sign-in and real email-code verification are not considered complete until the app and server flow have been implemented and tested end to end.
+<table>
+<tr>
+<td width="50%" valign="top">
 
-## 🧱 Architecture
+### 💬 Conversation-first UI
+A purpose-built Android chat screen with Markdown-style responses and message actions.
+
+</td>
+<td width="50%" valign="top">
+
+### ⚡ AI through a gateway
+Requests pass through a Cloudflare Worker to the configured Groq API.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 🎧 Helpful interactions
+The app includes response controls and read-aloud support.
+
+</td>
+<td width="50%" valign="top">
+
+### 🧩 Native Android foundation
+Built with Kotlin and Jetpack Compose, with GitHub Actions automating Android builds.
+
+</td>
+</tr>
+</table>
+
+> Feature availability can change while development continues. This overview describes the project direction and current implementation, not a guarantee that every planned feature is finished.
+
+## ◉ System architecture
 
 ```mermaid
 flowchart LR
-    A["Morrow Android app\nKotlin · Jetpack Compose"] -->|"HTTPS /chat"| B["Cloudflare Worker"]
-    B --> C["Groq API"]
-    C --> B
-    B --> A
+    A["📱 Morrow Android app<br/>Kotlin · Jetpack Compose"] -->|"HTTPS · /chat"| B["☁️ Cloudflare Worker"]
+    B -->|"API request"| C["✦ Groq API"]
+    C -->|"Generated response"| B
+    B -->|"JSON reply"| A
 ```
 
-The Android app calls the Worker rather than embedding the Groq API key in the APK. Keep provider credentials in Cloudflare Worker secrets.
+**Security boundary:** the Android client calls the Worker. Provider credentials belong in Cloudflare Worker secrets, never in source files or the APK.
 
-## 🛠️ Tech stack
+## 🧬 Technology
 
-| Layer | Technology |
-| --- | --- |
-| Android app | Kotlin |
-| UI | Jetpack Compose |
+| Component | Implementation |
+|:--|:--|
+| Mobile client | Kotlin |
+| UI toolkit | Jetpack Compose |
 | Backend gateway | Cloudflare Workers |
 | AI provider | Groq API |
-| Build automation | GitHub Actions |
+| CI / APK build | GitHub Actions |
 
-## 🚀 Getting started
+## 🚀 Run Morrow
 
-### Try a build
+### Option A — Download a CI build
 
-1. Open [GitHub Actions](https://github.com/prasunmukherjeeee28-ops/Morrow/actions).
-2. Open a successful run of the Android build workflow.
-3. Download the APK artifact if one is available for that run.
-4. Install it on a compatible Android device, allowing installation from that source if Android asks.
+1. Open **[GitHub Actions → Android build](https://github.com/prasunmukherjeeee28-ops/Morrow/actions/workflows/build-apk.yml)**.
+2. Select a successful workflow run on the branch you want to test.
+3. Find and download its APK artifact, if the workflow uploaded one.
+4. Install it on a compatible Android device. Android may ask you to allow installation from that source.
 
-Only install APKs you trust. An Actions artifact is a development build unless a release is explicitly published and documented.
+**Build note:** an Actions artifact is a development build, not automatically a signed public release. Only install builds you trust.
 
-### Build from source
+### Option B — Build from source
 
-You'll need Android Studio or a compatible Gradle environment with a JDK supported by the project.
+You'll need Android Studio (or a compatible Gradle environment) and a JDK supported by the project.
 
-1. Clone this repository.
+1. Clone or download this repository.
 2. Open the project in Android Studio.
-3. Let Gradle sync.
-4. Run the app on an emulator or Android device.
+3. Allow Gradle sync to complete.
+4. Run the app on an emulator or connected Android device.
 
-The exact build configuration lives in the Gradle files and the workflow under `.github/workflows/`.
+The Gradle configuration and CI workflow are the source of truth for build settings.
 
-## ⚙️ Backend configuration
+## 🔌 Backend setup
 
-The Android app currently uses the Morrow Cloudflare Worker chat endpoint:
+The app's configured chat endpoint is:
 
-`https://morrow-backend.prasunmukherjeeee28.workers.dev/chat`
+```text
+https://morrow-backend.prasunmukherjeeee28.workers.dev/chat
+```
 
-The Worker uses the `GROQ_API_KEY` secret for provider access. Configure secrets in Cloudflare; **never commit API keys, access tokens, signing keys, or private credentials** to this repository.
+The Worker expects the `GROQ_API_KEY` secret for provider access. Manage that value in Cloudflare's secret configuration.
 
-Authentication is a separate workstream. Do not treat demo email-code flows or placeholder Google buttons as real authentication.
+- Never commit API keys, access tokens, signing keys, or private credentials.
+- Keep provider calls behind the Worker rather than placing provider keys in the Android client.
+- Demo verification flows and placeholder sign-in controls are **not** production authentication.
 
 ## 🗺️ Roadmap
 
 - [x] Native Kotlin / Jetpack Compose app foundation
 - [x] Cloudflare Worker → Groq chat architecture
 - [x] GitHub Actions Android build workflow
-- [ ] Complete and test real Google sign-in
+- [ ] Complete and verify Google sign-in end to end
 - [ ] Complete server-verified email-code authentication
 - [ ] Document release signing and verified APK releases
-- [ ] Add current screenshots and a feature-status checklist
+- [ ] Add current app screenshots and a verified feature checklist
 
-Roadmap checkboxes should only be marked complete when the corresponding behavior has been verified.
+Items should only be marked complete after their behavior has been tested.
 
-## 🤝 Contributing
+## 🧑‍🚀 Contributing
 
-Issues, bug reports, and focused pull requests are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before making changes. Keep changes scoped, test the Android build, and avoid including secrets or personal data.
+Bug reports, thoughtful suggestions, and focused pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), keep changes scoped, and test the Android build where possible.
 
-## 🔐 Security
+## 🛡️ Security
 
-If you discover a security issue, please do not publish secrets or sensitive user data in an issue. See [SECURITY.md](SECURITY.md).
+Please do not publish credentials or sensitive user data in issues. For security guidance, see [SECURITY.md](SECURITY.md).
 
-## 📄 License
+## ⚖️ License
 
-No license file is currently included. Until a license is added by the project owner, assume standard copyright applies; do not assume the code is open for reuse or redistribution.
+There is currently no license file in this repository. Until the project owner adds one, standard copyright applies; do not assume reuse or redistribution is permitted.
 
 ---
 
 <div align="center">
 
-**Morrow** · Built in the open, one step at a time.
+**MORROW AI**  
+*Built in the open. Designed for what comes next.*
 
 </div>
