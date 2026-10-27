@@ -23,6 +23,8 @@ import android.widget.Toast
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.cos
+import kotlin.math.sin
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -184,27 +186,27 @@ import kotlin.random.Random
 
 // ---------- Colors ----------
 
-private val MorrowBackground = Color(0xFF080A16)
-private val MorrowSurface = Color(0xFF111629)
-private val MorrowSurfaceRaised = Color(0xFF161C34)
-private val MorrowSidebar = Color(0xFF0B1020)
-private val MorrowAccentDefault = Color(0xFFA78BFA)
-private val MorrowVioletDeep = Color(0xFF4B2BD6)
-private val MorrowCoreLight = Color(0xFFE4DBFF)
-private val MorrowText = Color(0xFFF1F5FF)
-private val MorrowMuted = Color(0xFF9AA8C7)
-private val MorrowBorder = Color(0xFF26304B)
-private val MorrowSelected = Color(0xFF1E1A33)
-private val MorrowChipFill = Color(0xFF1A1534)
-private val MorrowChipBorder = Color(0xFF3B3170)
-private val MorrowCodeBg = Color(0xFF0A0D1F)
-private val MorrowDanger = Color(0xFFF87171)
+private val MorrowBackground = Color(0xFF080A13)
+private val MorrowSurface = Color(0xFF111421)
+private val MorrowSurfaceRaised = Color(0xFF191D30)
+private val MorrowSidebar = Color(0xFF0C0F1B)
+private val MorrowAccentDefault = Color(0xFFB7A0FF)
+private val MorrowVioletDeep = Color(0xFF55468F)
+private val MorrowCoreLight = Color(0xFFF0E9FF)
+private val MorrowText = Color(0xFFF5F3FF)
+private val MorrowMuted = Color(0xFF9EA4C4)
+private val MorrowBorder = Color(0xFF292D43)
+private val MorrowSelected = Color(0xFF211E38)
+private val MorrowChipFill = Color(0xFF17192A)
+private val MorrowChipBorder = Color(0xFF343550)
+private val MorrowCodeBg = Color(0xFF0C1020)
+private val MorrowDanger = Color(0xFFE18484)
 
 private val MorrowAccentChoices = listOf(
-    Color(0xFFA78BFA), // Violet
-    Color(0xFFFB7185), // Rose
-    Color(0xFFFBBF24), // Amber
-    Color(0xFF34D399)  // Emerald
+    Color(0xFFB7A0FF), // Soft violet
+    Color(0xFFE1A4D6), // Muted rose
+    Color(0xFFE8BE8A), // Warm amber
+    Color(0xFF97D9C0)  // Mint
 )
 private val MorrowAccentNames = listOf("Violet", "Rose", "Amber", "Emerald")
 
@@ -231,7 +233,7 @@ private const val WELCOME_ID = "welcome"
 private const val PREFS_CHATS = "morrow_chats"
 private const val PREFS_SETTINGS = "morrow_settings"
 private const val KEY_CHATS_JSON = "chats_json"
-private const val KEY_LANDSCAPE = "landscape_on"
+private const val KEY_LANDSCAPE = "landscape_on_v2"
 private const val KEY_ACCENT = "accent_index"
 
 // ---------- Prompt marquee tuning ----------
@@ -595,7 +597,7 @@ private fun MorrowMainScreen() {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val settingsPrefs = remember { context.getSharedPreferences(PREFS_SETTINGS, Context.MODE_PRIVATE) }
 
-    var landscapeOn by remember { mutableStateOf(settingsPrefs.getBoolean(KEY_LANDSCAPE, true)) }
+    var landscapeOn by remember { mutableStateOf(settingsPrefs.getBoolean(KEY_LANDSCAPE, false)) }
     var accentIndex by remember { mutableIntStateOf(settingsPrefs.getInt(KEY_ACCENT, 0)) }
     val accent = MorrowAccentChoices[accentIndex.coerceIn(0, MorrowAccentChoices.lastIndex)]
 
@@ -914,7 +916,7 @@ private fun MorrowMainScreen() {
                         Spacer(Modifier.height(22.dp))
                         SidebarAction(
                             icon = { ChatIcon(tint = if (!showExplore && !showLibrary && !showSettings) accent else MorrowMuted) },
-                            label = "Chat",
+                            label = "New Chat",
                             selected = !showExplore && !showLibrary && !showSettings
                         ) {
                             showExplore = false
@@ -935,8 +937,8 @@ private fun MorrowMainScreen() {
                         }
                         Spacer(Modifier.height(6.dp))
                         SidebarAction(
-                            icon = { Icon(Icons.Outlined.BookmarkBorder, contentDescription = null, tint = if (showLibrary) accent else MorrowMuted, modifier = Modifier.size(22.dp)) },
-                            label = "Library",
+                            icon = { Icon(Icons.Outlined.History, contentDescription = null, tint = if (showLibrary) accent else MorrowMuted, modifier = Modifier.size(22.dp)) },
+                            label = "Chat History",
                             selected = showLibrary
                         ) {
                             showLibrary = true
@@ -1031,7 +1033,7 @@ private fun MorrowMainScreen() {
                                         .clip(RoundedCornerShape(13.dp))
                                         .background(
                                             brush = if (selected) {
-                                                Brush.linearGradient(listOf(Color(0xFF30206B), Color(0xFF171D43)))
+                                                Brush.linearGradient(listOf(MorrowSelected, MorrowSelected))
                                             } else {
                                                 Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
                                             },
@@ -1039,7 +1041,7 @@ private fun MorrowMainScreen() {
                                         )
                                         .border(
                                             width = if (selected) 1.dp else 0.dp,
-                                            color = if (selected) accent.copy(alpha = 0.8f) else Color.Transparent,
+                                            color = if (selected) accent.copy(alpha = 0.32f) else Color.Transparent,
                                             shape = RoundedCornerShape(13.dp)
                                         )
                                         .combinedClickable(
@@ -1124,7 +1126,7 @@ private fun MorrowMainScreen() {
                 )
             } else if (showLibrary) {
                 LibraryScreen(
-                    chats = conversations.filter { it.pinned && !it.temporary },
+                    chats = conversations.filter { !it.temporary }.sortedByDescending { it.pinned },
                     onBack = { showLibrary = false },
                     onOpenChat = { chatId ->
                         activeId = chatId
@@ -1158,17 +1160,20 @@ private fun MorrowMainScreen() {
                                 clock = clock,
                                 palette = palette,
                                 animate = landscapeOn,
+                                recentChats = conversations.filter { !it.temporary && messagesByConversation[it.id].orEmpty().isNotEmpty() }.take(3),
+                                onOpenHistory = { showLibrary = true },
+                                onOpenChat = { chatId ->
+                                    activeId = chatId
+                                    input = ""
+                                    pendingAttachments = emptyList()
+                                    attachmentsOpen = false
+                                    typingMessageId = null
+                                    typingSkip = false
+                                },
                                 onPromptClick = { input = it }
                             )
                         } else {
-                            Box(modifier = Modifier.fillMaxSize()) {
-                                LandscapeBackdrop(
-                                    palette = palette,
-                                    animate = landscapeOn,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .graphicsLayer { alpha = 0.3f }
-                                )
+                            Box(modifier = Modifier.fillMaxSize().background(MorrowBackground)) {
                                 MessageList(
                                     messages = currentMessages,
                                     isLoading = isLoading,
@@ -1219,6 +1224,13 @@ private fun MorrowMainScreen() {
                         fontSize = 10.sp,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, bottom = 5.dp)
+                    )
+                    MainBottomBar(
+                        homeSelected = currentMessages.isEmpty(), historySelected = false, toolsSelected = false, settingsSelected = false,
+                        onHome = { if (currentMessages.isNotEmpty()) createNewChat() },
+                        onHistory = { showLibrary = true; showExplore = false; showSettings = false },
+                        onTools = { showExplore = true; showLibrary = false; showSettings = false },
+                        onSettings = { showSettings = true; showExplore = false; showLibrary = false }
                     )
                 }
             }
@@ -1358,29 +1370,43 @@ private fun TopBar(
     onNewChatClick: () -> Unit,
     temporary: Boolean = false
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .height(56.dp)
-            .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(onClick = onMenuClick) {
-            MenuIcon(tint = MorrowText)
+    val accent = LocalMorrowAccent.current
+    Row(Modifier.fillMaxWidth().statusBarsPadding().height(58.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onMenuClick) { MenuIcon(tint = MorrowText) }
+        Spacer(Modifier.weight(1f))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            BrandMark(Modifier.size(25.dp))
+            Column {
+                Text(if (temporary) "Temporary chat" else "Morrow", color = MorrowText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.25).sp)
+                if (!temporary) Text("AI COMPANION", color = MorrowMuted, fontSize = 8.sp, letterSpacing = 1.2.sp)
+            }
         }
         Spacer(Modifier.weight(1f))
-        Text(
-            if (temporary) "Temporary chat" else "Morrow",
-            color = MorrowText,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 0.4.sp
-        )
-        Spacer(Modifier.weight(1f))
-        IconButton(onClick = onNewChatClick) {
-            ComposeIcon(tint = MorrowText)
-        }
+        IconButton(onClick = onNewChatClick, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(14.dp)).background(MorrowSurface)) { ComposeIcon(tint = accent) }
+    }
+}
+
+@Composable
+private fun MainBottomBar(
+    homeSelected: Boolean, historySelected: Boolean, toolsSelected: Boolean, settingsSelected: Boolean,
+    onHome: () -> Unit, onHistory: () -> Unit, onTools: () -> Unit, onSettings: () -> Unit
+) {
+    HorizontalDivider(color = MorrowBorder.copy(alpha = 0.7f), thickness = 1.dp)
+    Row(Modifier.fillMaxWidth().background(Color(0xFF0D0D14)).navigationBarsPadding().padding(horizontal = 8.dp, vertical = 7.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+        BottomNavItem("Home", Icons.Outlined.Home, homeSelected, onHome, Modifier.weight(1f))
+        BottomNavItem("Chats", Icons.Outlined.ChatBubbleOutline, historySelected, onHistory, Modifier.weight(1f))
+        BottomNavItem("Tools", Icons.Outlined.AutoAwesome, toolsSelected, onTools, Modifier.weight(1f))
+        BottomNavItem("Settings", Icons.Outlined.Settings, settingsSelected, onSettings, Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun BottomNavItem(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val accent = LocalMorrowAccent.current
+    Column(modifier.clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick).padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Icon(icon, contentDescription = label, tint = if (selected) accent else MorrowMuted, modifier = Modifier.size(21.dp))
+        Spacer(Modifier.height(3.dp))
+        Text(label, color = if (selected) accent else MorrowMuted, fontSize = 10.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
     }
 }
 
@@ -1390,51 +1416,99 @@ private fun ExploreScreen(
     onPromptClick: (String) -> Unit
 ) {
     val accent = LocalMorrowAccent.current
-    val prompts = MarqueeRowOnePrompts + MarqueeRowTwoPrompts + MarqueeRowThreePrompts
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MorrowBackground)
-    ) {
+    Column(modifier = Modifier.fillMaxSize().background(MorrowBackground)) {
         Row(
-            modifier = Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(horizontal = 8.dp),
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().height(60.dp).padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) { BackIcon(tint = accent) }
-            Text("Explore", color = MorrowText, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-        }
-        Text(
-            "A starting point for whatever you're thinking about.",
-            color = MorrowMuted,
-            fontSize = 13.sp,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-        )
-        LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(9.dp)
-        ) {
-            itemsIndexed(prompts) { _, prompt ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(15.dp))
-                        .background(
-                            Brush.linearGradient(listOf(MorrowSurfaceRaised, MorrowSurface)),
-                            RoundedCornerShape(15.dp)
-                        )
-                        .border(1.dp, MorrowBorder, RoundedCornerShape(15.dp))
-                        .clickable { onPromptClick(prompt) }
-                        .padding(15.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Text(prompt, color = MorrowText, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                    Icon(Icons.Outlined.ArrowForward, contentDescription = null, tint = MorrowMuted, modifier = Modifier.size(18.dp))
-                }
+            Column {
+                Text("Tools & ideas", color = MorrowText, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text("A useful place to start", color = MorrowMuted, fontSize = 11.sp)
             }
         }
+        Column(
+            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 10.dp)
+        ) {
+            Text("What are we working on?", color = MorrowText, fontSize = 25.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.5).sp)
+            Spacer(Modifier.height(7.dp))
+            Text("Choose a starting point. Each shortcut opens a real chat with Morrow.", color = MorrowMuted, fontSize = 13.sp, lineHeight = 19.sp)
+            Spacer(Modifier.height(20.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ToolActionCard(
+                    title = "Study & learn", detail = "Break down tough topics", icon = { Icon(Icons.Outlined.School, contentDescription = null, tint = accent, modifier = Modifier.size(21.dp)) },
+                    modifier = Modifier.weight(1f),
+                    onClick = { onPromptClick("Teach me this topic step by step in simple language. Start with the basics and give an example.") }
+                )
+                ToolActionCard(
+                    title = "Coding help", detail = "Build, fix, understand", icon = { Icon(Icons.Outlined.Code, contentDescription = null, tint = accent, modifier = Modifier.size(21.dp)) },
+                    modifier = Modifier.weight(1f),
+                    onClick = { onPromptClick("Help me with a coding project. Ask what I want to build, then guide me step by step and explain the code.") }
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ToolActionCard(
+                    title = "Writing", detail = "Make words sound natural", icon = { Icon(Icons.Outlined.EditNote, contentDescription = null, tint = accent, modifier = Modifier.size(21.dp)) },
+                    modifier = Modifier.weight(1f),
+                    onClick = { onPromptClick("Help me write this in a natural, human-sounding way. Ask me what it's for if that isn't clear.") }
+                )
+                ToolActionCard(
+                    title = "Project planner", detail = "Turn an idea into steps", icon = { Icon(Icons.Outlined.Checklist, contentDescription = null, tint = accent, modifier = Modifier.size(21.dp)) },
+                    modifier = Modifier.weight(1f),
+                    onClick = { onPromptClick("Help me turn an idea into a practical project plan with clear steps, priorities, and free tools where possible.") }
+                )
+            }
+            Spacer(Modifier.height(24.dp))
+            Text("QUICK PROMPTS", color = MorrowMuted, fontSize = 10.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(9.dp))
+            val prompts = listOf(
+                "Explain a concept like I'm new to it" to "Explain a topic from the ground up with a simple example.",
+                "Help me debug something" to "Help me debug a problem. Ask for the error and relevant code before suggesting a fix.",
+                "Compare two options" to "Help me compare two options fairly, including trade-offs and which fits my needs.",
+                "Brainstorm fresh ideas" to "Brainstorm useful, original ideas with me and explain the strongest few."
+            )
+            Column(
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xFF101321)).border(1.dp, MorrowBorder, RoundedCornerShape(18.dp))
+            ) {
+                prompts.forEachIndexed { index, item ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { onPromptClick(item.second) }.padding(horizontal = 13.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(Color(0xFF25203B)), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = accent, modifier = Modifier.size(17.dp))
+                        }
+                        Spacer(Modifier.width(11.dp))
+                        Text(item.first, color = MorrowText, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        Icon(Icons.Outlined.ArrowForward, contentDescription = null, tint = MorrowMuted, modifier = Modifier.size(17.dp))
+                    }
+                    if (index != prompts.lastIndex) HorizontalDivider(color = MorrowBorder.copy(alpha = 0.75f), modifier = Modifier.padding(start = 58.dp))
+                }
+            }
+            Spacer(Modifier.height(20.dp))
+        }
+    }
+}
+
+@Composable
+private fun ToolActionCard(
+    title: String,
+    detail: String,
+    icon: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+            .background(Brush.linearGradient(listOf(Color(0xFF1C1A2B), Color(0xFF121520))))
+            .border(1.dp, Color(0xFF34314B), RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Box(Modifier.size(39.dp).clip(RoundedCornerShape(13.dp)).background(Color(0xFF2A2340)), contentAlignment = Alignment.Center) { icon() }
+        Text(title, color = MorrowText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        Text(detail, color = MorrowMuted, fontSize = 11.sp, lineHeight = 15.sp)
     }
 }
 
@@ -1445,58 +1519,79 @@ private fun LibraryScreen(
     onOpenChat: (String) -> Unit
 ) {
     val accent = LocalMorrowAccent.current
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MorrowBackground)
-    ) {
+    var query by remember { mutableStateOf("") }
+    val visibleChats = chats.filter { it.title.contains(query.trim(), ignoreCase = true) }
+    Column(modifier = Modifier.fillMaxSize().background(MorrowBackground)) {
         Row(
-            modifier = Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(horizontal = 8.dp),
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().height(60.dp).padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) { BackIcon(tint = accent) }
-            Text("Library", color = MorrowText, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            Column {
+                Text("Chat history", color = MorrowText, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text("${chats.size} saved conversations", color = MorrowMuted, fontSize = 11.sp)
+            }
         }
-        if (chats.isEmpty()) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            singleLine = true,
+            leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, tint = MorrowMuted) },
+            placeholder = { Text("Search chats...", color = MorrowMuted, fontSize = 13.sp) },
+            shape = RoundedCornerShape(16.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = accent,
+                unfocusedBorderColor = MorrowBorder,
+                focusedContainerColor = Color(0xFF101321),
+                unfocusedContainerColor = Color(0xFF101321),
+                focusedTextColor = MorrowText,
+                unfocusedTextColor = MorrowText,
+                cursorColor = accent
+            )
+        )
+        if (visibleChats.isEmpty()) {
             Column(
-                modifier = Modifier.fillMaxSize().padding(28.dp),
+                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 28.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Icon(Icons.Outlined.BookmarkBorder, contentDescription = null, tint = accent, modifier = Modifier.size(42.dp))
+                Icon(if (query.isBlank()) Icons.Outlined.History else Icons.Outlined.SearchOff, contentDescription = null, tint = accent, modifier = Modifier.size(42.dp))
                 Spacer(Modifier.height(14.dp))
-                Text("Your pinned chats live here", color = MorrowText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Text(if (query.isBlank()) "No conversations yet" else "No matching chats", color = MorrowText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Long-press a recent chat in the sidebar to pin it. You can also rename or delete it there.",
-                    color = MorrowMuted,
-                    fontSize = 13.sp,
-                    textAlign = TextAlign.Center,
-                    lineHeight = 19.sp
+                    if (query.isBlank()) "Start a chat with Morrow and it will show up here automatically." else "Try a different word or phrase.",
+                    color = MorrowMuted, fontSize = 13.sp, textAlign = TextAlign.Center, lineHeight = 19.sp
                 )
             }
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(9.dp)
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
-                items(chats, key = { it.id }) { chat ->
+                items(visibleChats, key = { it.id }) { chat ->
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(15.dp))
-                            .background(MorrowSurface)
-                            .border(1.dp, MorrowBorder, RoundedCornerShape(15.dp))
-                            .clickable { onOpenChat(chat.id) }
-                            .padding(15.dp),
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp))
+                            .clickable { onOpenChat(chat.id) }.padding(horizontal = 10.dp, vertical = 13.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Outlined.BookmarkBorder, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(12.dp))
-                        Text(chat.title, color = MorrowText, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                        Box(
+                            modifier = Modifier.size(38.dp).clip(RoundedCornerShape(12.dp))
+                                .background(Brush.linearGradient(listOf(Color(0xFF2A2340), Color(0xFF171927)))),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(if (chat.pinned) Icons.Outlined.Bookmark else Icons.Outlined.ChatBubbleOutline, contentDescription = null, tint = accent, modifier = Modifier.size(18.dp))
+                        }
+                        Spacer(Modifier.width(11.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(chat.title, color = MorrowText, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+                            Text(relativeChatTime(chat.id, emptyList()), color = MorrowMuted, fontSize = 10.sp)
+                        }
                         Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MorrowMuted, modifier = Modifier.size(18.dp))
                     }
+                    HorizontalDivider(color = MorrowBorder.copy(alpha = 0.7f), modifier = Modifier.padding(start = 59.dp))
                 }
             }
         }
@@ -1508,58 +1603,289 @@ private fun WelcomeHero(
     clock: MorrowClock,
     palette: SkyPalette,
     animate: Boolean,
+    recentChats: List<MorrowConversationSession>,
+    onOpenChat: (String) -> Unit,
+    onOpenHistory: () -> Unit,
     onPromptClick: (String) -> Unit
 ) {
     val accent = LocalMorrowAccent.current
-    Box(modifier = Modifier.fillMaxSize()) {
-        LandscapeBackdrop(palette = palette, animate = animate, modifier = Modifier.fillMaxSize())
-
-        Crossfade(
-            targetState = clock.phase,
-            modifier = Modifier
-                .align(androidx.compose.ui.Alignment.TopCenter)
-                .fillMaxWidth()
-                .padding(top = 36.dp, start = 24.dp, end = 24.dp),
-            label = "heroText"
-        ) { phase ->
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    phase.greeting,
-                    color = accent,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    letterSpacing = 0.6.sp
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "${phase.label.uppercase()}  ·  ${clock.timeText}",
-                    color = MorrowMuted,
-                    fontSize = 11.sp,
-                    letterSpacing = 1.2.sp
-                )
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    phase.headline,
-                    color = MorrowText,
-                    fontSize = 26.sp,
-                    lineHeight = 32.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center
-                )
+    Box(Modifier.fillMaxSize().background(MorrowBackground)) {
+        if (animate) LandscapeBackdrop(palette = palette, animate = true, modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 0.09f })
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp), horizontalAlignment = Alignment.Start) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(bottom = 23.dp)) {
+                Box(Modifier.size(46.dp).clip(RoundedCornerShape(16.dp)).background(Brush.linearGradient(listOf(Color(0xFFBFA4FF), Color(0xFF7962C9), Color(0xFF33284E)))), contentAlignment = Alignment.Center) { BrandMark(Modifier.size(40.dp)) }
+                Column {
+                    Text("Morrow", color = MorrowText, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.55).sp)
+                    Text("YOUR SPACE TO THINK", color = MorrowMuted, fontSize = 9.sp, letterSpacing = 1.45.sp, fontWeight = FontWeight.Medium)
+                }
+                Spacer(Modifier.weight(1f))
+                Box(Modifier.clip(RoundedCornerShape(50)).background(Color(0xFF171522)).border(1.dp, accent.copy(alpha = 0.28f), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 6.dp)) {
+                    Text("FREE", color = accent, fontSize = 9.sp, letterSpacing = 1.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
+            Text(clock.phase.greeting, color = accent, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(7.dp))
+            Text("What would you like\nto explore today?", color = MorrowText, fontSize = 29.sp, lineHeight = 34.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.65).sp)
+            Spacer(Modifier.height(8.dp))
+            Text("Think through a problem, learn something new, or turn an idea into a plan.", color = MorrowMuted, fontSize = 13.sp, lineHeight = 19.sp)
+            Spacer(Modifier.height(23.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text("QUICK START", color = MorrowMuted, fontSize = 10.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.weight(1f))
+                Text("4 ways to begin", color = MorrowMuted.copy(alpha = 0.75f), fontSize = 10.sp)
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                WelcomePromptCard("Study & learn", "Explain it simply", "Explain a difficult topic in simple steps with an example", onPromptClick, Modifier.weight(1f))
+                WelcomePromptCard("Coding help", "Build and debug", "Help me with coding step by step. Ask what I'm trying to build first.", onPromptClick, Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                WelcomePromptCard("Write something", "Find the right words", "Help me write something clear and natural. Ask what it's for if needed.", onPromptClick, Modifier.weight(1f))
+                WelcomePromptCard("Plan a project", "Turn ideas into steps", "Help me turn my idea into a practical step-by-step plan", onPromptClick, Modifier.weight(1f))
+            }
+            if (recentChats.isNotEmpty()) {
+                Spacer(Modifier.height(23.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("RECENT CHATS", color = MorrowMuted, fontSize = 10.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.weight(1f))
+                    Text("Open history", color = accent, fontSize = 10.sp, modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onOpenHistory).padding(horizontal = 4.dp, vertical = 3.dp))
+                }
+                Spacer(Modifier.height(8.dp))
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp)).background(Color(0xFF12121B)).border(1.dp, MorrowBorder, RoundedCornerShape(17.dp))) {
+                    recentChats.forEachIndexed { index, chat ->
+                        Row(Modifier.fillMaxWidth().clickable { onOpenChat(chat.id) }.padding(horizontal = 12.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(32.dp).clip(RoundedCornerShape(11.dp)).background(Brush.linearGradient(listOf(Color(0xFF33264E), Color(0xFF1D1A2B)))), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null, tint = accent, modifier = Modifier.size(16.dp))
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(chat.title, color = MorrowText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+                                Text(relativeChatTime(chat.id, emptyList()), color = MorrowMuted, fontSize = 10.sp)
+                            }
+                            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MorrowMuted, modifier = Modifier.size(17.dp))
+                        }
+                        if (index != recentChats.lastIndex) HorizontalDivider(color = MorrowBorder.copy(alpha = 0.7f), modifier = Modifier.padding(start = 54.dp))
+                    }
+                }
+            } else {
+                Spacer(Modifier.height(20.dp))
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Brush.linearGradient(listOf(Color(0xFF1C1830), Color(0xFF13131C)))).border(1.dp, accent.copy(alpha = 0.19f), RoundedCornerShape(16.dp)).padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = accent, modifier = Modifier.size(19.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text("Your next idea starts here", color = MorrowText, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        Text("Ask Morrow anything using the box below.", color = MorrowMuted, fontSize = 11.sp)
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+
+private data class OrbParticle(
+    val angle: Float,
+    val orbitScale: Float,
+    val sizeScale: Float,
+    val speed: Float,
+    val phase: Float
+)
+
+@Composable
+private fun MorrowSignatureOrb(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "morrowOrb")
+    val rotation by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 18000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "orbRotation"
+    )
+    val floatMotion by transition.animateFloat(
+        initialValue = -1f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 3400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "orbFloat"
+    )
+    val density = LocalDensity.current
+    val bobPx = with(density) { floatMotion * 4.dp.toPx() }
+    val particles = remember {
+        List(20) { index ->
+            OrbParticle(
+                angle = (index * 137.5f) % 360f,
+                orbitScale = 1.18f + ((index * 7) % 9) / 18f,
+                sizeScale = 0.7f + ((index * 3) % 6) / 10f,
+                speed = if (index % 2 == 0) 0.75f else -0.52f,
+                phase = ((index * 13) % 17) / 17f
+            )
+        }
+    }
+
+    Canvas(modifier = modifier) {
+        val centerX = size.width / 2f
+        val centerY = size.height / 2f + bobPx
+        val radius = minOf(size.width * 0.245f, size.height * 0.405f)
+        if (radius <= 0f) return@Canvas
+
+        // Soft ambient halo: one broad gradient, no image assets or blur layers.
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color(0x263F344B),
+                    Color(0x12352D40),
+                    Color.Transparent
+                ),
+                center = Offset(centerX, centerY),
+                radius = radius * 1.85f
+            ),
+            radius = radius * 1.85f,
+            center = Offset(centerX, centerY)
+        )
+
+        // Fine orbit tracks create depth without a heavy 3D renderer.
+        val orbitWidth = radius * 3.05f
+        val orbitHeight = radius * 1.10f
+        drawArc(
+            brush = Brush.sweepGradient(
+                colors = listOf(
+                    Color.Transparent,
+                    Color(0x55B8A8D0),
+                    Color(0x168E829F),
+                    Color.Transparent,
+                    Color(0x40D9D0E5),
+                    Color.Transparent
+                ),
+                center = Offset(centerX, centerY)
+            ),
+            startAngle = rotation * 360f + 12f,
+            sweepAngle = 300f,
+            useCenter = false,
+            topLeft = Offset(centerX - orbitWidth / 2f, centerY - orbitHeight / 2f),
+            size = Size(orbitWidth, orbitHeight),
+            style = Stroke(width = 1.1.dp.toPx())
+        )
+        drawArc(
+            color = Color(0x268F829F),
+            startAngle = 195f - rotation * 210f,
+            sweepAngle = 145f,
+            useCenter = false,
+            topLeft = Offset(centerX - orbitWidth * 0.44f, centerY - orbitHeight * 0.78f),
+            size = Size(orbitWidth * 0.88f, orbitHeight * 1.56f),
+            style = Stroke(width = 0.8.dp.toPx())
+        )
+
+        // Draw the sphere with radial shading and a restrained pearl-lilac core.
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color(0xFFE9E2F1),
+                    Color(0xFFB9A9D0),
+                    Color(0xFF756781),
+                    Color(0xFF29252F)
+                ),
+                center = Offset(centerX - radius * 0.34f, centerY - radius * 0.42f),
+                radius = radius * 1.62f
+            ),
+            radius = radius,
+            center = Offset(centerX, centerY)
+        )
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color(0xC8FFFFFF),
+                    Color(0x55E7DDF4),
+                    Color.Transparent
+                ),
+                center = Offset(centerX - radius * 0.37f, centerY - radius * 0.47f),
+                radius = radius * 0.88f
+            ),
+            radius = radius * 0.96f,
+            center = Offset(centerX, centerY)
+        )
+        drawCircle(
+            color = Color(0x668F7CA8),
+            radius = radius * 0.94f,
+            center = Offset(centerX, centerY),
+            style = Stroke(width = 1.dp.toPx())
+        )
+
+        // Tiny orbiting particles fade in and out; their positions are deterministic,
+        // so there is no per-frame allocation or random-number generation.
+        particles.forEach { particle ->
+            val angle = (
+                particle.angle + rotation * 360f * particle.speed + particle.phase * 360f
+            ) * (Math.PI.toFloat() / 180f)
+            val orbitX = radius * particle.orbitScale * 1.52f
+            val orbitY = radius * particle.orbitScale * 0.56f
+            val px = centerX + cos(angle.toDouble()).toFloat() * orbitX
+            val py = centerY + sin(angle.toDouble()).toFloat() * orbitY
+            val fade = (0.5f + 0.5f * sin((angle + particle.phase * 6.28f).toDouble()).toFloat())
+            val alpha = 0.10f + fade * 0.62f
+            val particleRadius = (1.1f + particle.sizeScale * 1.25f).dp.toPx()
+            drawCircle(
+                color = if (particle.phase > 0.48f) {
+                    Color(0xFFE5D9F2).copy(alpha = alpha)
+                } else {
+                    Color(0xFFB8A8D0).copy(alpha = alpha)
+                },
+                radius = particleRadius,
+                center = Offset(px, py)
+            )
         }
 
-        Column(
-            modifier = Modifier
-                .align(androidx.compose.ui.Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(bottom = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            PromptMarqueeRow(MarqueeRowOnePrompts, reverse = false, onPromptClick = onPromptClick)
-            PromptMarqueeRow(MarqueeRowTwoPrompts, reverse = true, onPromptClick = onPromptClick)
-            PromptMarqueeRow(MarqueeRowThreePrompts, reverse = false, onPromptClick = onPromptClick)
-        }
+        // A small moving glint makes the orb feel alive without flashing.
+        val glintAngle = (rotation * 360f - 135f) * (Math.PI.toFloat() / 180f)
+        val glintX = centerX + cos(glintAngle.toDouble()).toFloat() * radius * 0.57f
+        val glintY = centerY + sin(glintAngle.toDouble()).toFloat() * radius * 0.57f
+        drawCircle(
+            color = Color.White.copy(alpha = 0.58f),
+            radius = 1.5.dp.toPx(),
+            center = Offset(glintX, glintY)
+        )
+    }
+}
+
+@Composable
+private fun WelcomePromptCard(
+    title: String,
+    detail: String,
+    prompt: String,
+    onPromptClick: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val shape = RoundedCornerShape(17.dp)
+    Column(
+        modifier = modifier
+            .height(82.dp)
+            .clip(shape)
+            .background(Brush.linearGradient(listOf(Color(0xFF1C1A29), Color(0xFF14141D))))
+            .border(1.dp, Color(0xFF39324B), shape)
+            .clickable { onPromptClick(prompt) }
+            .padding(horizontal = 13.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            title,
+            color = MorrowText,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium
+        )
+        Spacer(Modifier.height(5.dp))
+        Text(
+            detail,
+            color = MorrowMuted,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -1902,11 +2228,8 @@ private fun MorrowMessageRow(
                         modifier = Modifier
                             .widthIn(max = 300.dp)
                             .clip(RoundedCornerShape(20.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    colors = listOf(accent, lerp(accent, Color.Black, 0.45f))
-                                )
-                            )
+                            .background(Brush.linearGradient(listOf(Color(0xFF302640), Color(0xFF201E2A))), RoundedCornerShape(20.dp))
+                            .border(1.dp, Color(0xFF514367), RoundedCornerShape(20.dp))
                             .combinedClickable(onClick = {}, onLongClick = { showUserMessageMenu = true })
                             .padding(horizontal = 16.dp, vertical = 12.dp)
                     ) {
@@ -1942,7 +2265,13 @@ private fun MorrowMessageRow(
                 }
             }
         } else {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.fillMaxWidth()
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Brush.linearGradient(listOf(Color(0xFF121625), Color(0xFF10131F))), RoundedCornerShape(20.dp))
+                    .border(1.dp, Color(0xFF272D44), RoundedCornerShape(20.dp))
+                    .padding(14.dp)
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     BrandMark(Modifier.size(24.dp))
                     Spacer(Modifier.width(8.dp))
@@ -2187,50 +2516,30 @@ private fun AttachmentPanel(
     onCamera: () -> Unit
 ) {
     val accent = LocalMorrowAccent.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        AttachOption(label = "Photos", onClick = onPhotos, modifier = Modifier.weight(1f)) {
-            PhotoIcon(modifier = Modifier.size(22.dp), tint = accent)
+    Column(Modifier.fillMaxWidth().padding(bottom = 9.dp).clip(RoundedCornerShape(20.dp)).background(Color(0xFF11111A)).border(1.dp, MorrowBorder, RoundedCornerShape(20.dp)).padding(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Add to your message", color = MorrowText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.weight(1f))
+            Text("Photos · Camera · Files", color = MorrowMuted, fontSize = 10.sp)
         }
-        AttachOption(label = "Files", onClick = onFiles, modifier = Modifier.weight(1f)) {
-            FileIcon(modifier = Modifier.size(22.dp), tint = accent)
-        }
-        AttachOption(label = "Camera", onClick = onCamera, modifier = Modifier.weight(1f)) {
-            CameraIcon(modifier = Modifier.size(22.dp), tint = accent)
+        Spacer(Modifier.height(11.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+            AttachOption(label = "Photos", onClick = onPhotos, modifier = Modifier.weight(1f)) { PhotoIcon(modifier = Modifier.size(22.dp), tint = accent) }
+            AttachOption(label = "Camera", onClick = onCamera, modifier = Modifier.weight(1f)) { CameraIcon(modifier = Modifier.size(22.dp), tint = accent) }
+            AttachOption(label = "Files", onClick = onFiles, modifier = Modifier.weight(1f)) { FileIcon(modifier = Modifier.size(22.dp), tint = accent) }
         }
     }
 }
 
 @Composable
-private fun AttachOption(
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    icon: @Composable () -> Unit
-) {
+private fun AttachOption(label: String, onClick: () -> Unit, modifier: Modifier = Modifier, icon: @Composable () -> Unit) {
     Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(MorrowSurface)
-            .border(1.dp, MorrowBorder, RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick)
-            .padding(vertical = 14.dp),
+        modifier = modifier.clip(RoundedCornerShape(16.dp)).background(Brush.linearGradient(listOf(Color(0xFF211B31), Color(0xFF171720))))
+            .border(1.dp, Color(0xFF3A304D), RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(MorrowChipFill),
-            contentAlignment = Alignment.Center
-        ) {
-            icon()
-        }
-        Spacer(Modifier.height(8.dp))
+        Box(Modifier.size(42.dp).clip(RoundedCornerShape(13.dp)).background(Color(0xFF302543)), contentAlignment = Alignment.Center) { icon() }
+        Spacer(Modifier.height(7.dp))
         Text(label, color = MorrowText, fontSize = 12.sp, fontWeight = FontWeight.Medium)
     }
 }
@@ -2493,12 +2802,12 @@ private fun MorrowComposer(
     val canSend = (inputText.isNotBlank() || attachments.isNotEmpty()) && !busy
 
     val borderColor by animateColorAsState(
-        targetValue = if (focused) accent.copy(alpha = 0.85f) else MorrowBorder,
+        targetValue = if (focused) accent.copy(alpha = 0.48f) else MorrowBorder,
         animationSpec = tween(durationMillis = 250),
         label = "composerBorder"
     )
     val sendTint by animateColorAsState(
-        targetValue = if (busy || canSend) accent else Color(0xFF2A2440),
+        targetValue = if (busy || canSend) accent else Color(0xFF2B292E),
         animationSpec = tween(durationMillis = 220),
         label = "sendTint"
     )
@@ -2620,7 +2929,7 @@ private fun MorrowComposer(
                     )
                 } else {
                     ArrowUpIcon(
-                        tint = if (canSend) Color.White else MorrowMuted,
+                        tint = if (canSend) Color(0xFF29232F) else MorrowMuted,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -2658,15 +2967,31 @@ private fun SettingsScreen(
             IconButton(onClick = onBack) {
                 BackIcon(tint = MorrowText)
             }
-            Text("Settings", color = MorrowText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Column {
+                Text("Settings", color = MorrowText, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text("Make Morrow feel like yours", color = MorrowMuted, fontSize = 11.sp)
+            }
         }
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .padding(horizontal = 18.dp, vertical = 8.dp)
         ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+                    .background(Brush.linearGradient(listOf(Color(0xFF211A35), Color(0xFF13131D))))
+                    .border(1.dp, Color(0xFF413456), RoundedCornerShape(20.dp)).padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFF302443)), contentAlignment = Alignment.Center) { BrandMark(Modifier.size(39.dp)) }
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text("Morrow AI", color = MorrowText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Personalize your workspace", color = MorrowMuted, fontSize = 11.sp)
+                }
+            }
             SettingsSection(title = "Appearance") {
                 Text("Accent color", color = MorrowText, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(12.dp))
@@ -2698,10 +3023,10 @@ private fun SettingsScreen(
             SettingsSection(title = "Animation") {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Animated landscape", color = MorrowText, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                        Text("Animated welcome background", color = MorrowText, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            "Turn off to save battery. The sky still changes with the time of day.",
+                            "Adds a subtle time-of-day scene to the welcome screen. Turn it off for a clean background.",
                             color = MorrowMuted,
                             fontSize = 12.sp,
                             lineHeight = 17.sp
@@ -2758,9 +3083,9 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(MorrowSurface)
-                .border(1.dp, MorrowBorder, RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(18.dp))
+                .background(Brush.linearGradient(listOf(Color(0xFF191821), Color(0xFF14141B))))
+                .border(1.dp, MorrowBorder, RoundedCornerShape(18.dp))
                 .padding(16.dp),
             content = content
         )
@@ -3294,7 +3619,7 @@ private fun SidebarAction(
             .clip(RoundedCornerShape(14.dp))
             .background(
                 brush = if (selected) {
-                    Brush.linearGradient(listOf(Color(0xFF30206B), Color(0xFF192047)))
+                    Brush.linearGradient(listOf(MorrowSelected, MorrowSelected))
                 } else {
                     Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
                 },
@@ -3302,7 +3627,7 @@ private fun SidebarAction(
             )
             .border(
                 width = if (selected) 1.dp else 0.dp,
-                color = if (selected) accent.copy(alpha = 0.72f) else Color.Transparent,
+                color = if (selected) accent.copy(alpha = 0.30f) else Color.Transparent,
                 shape = RoundedCornerShape(14.dp)
             )
             .clickable(onClick = onClick)
@@ -3330,10 +3655,10 @@ private fun SidebarProCard(accent: Color, onClick: () -> Unit) {
             .fillMaxWidth()
             .clip(shape)
             .background(
-                Brush.linearGradient(listOf(Color(0xFF26145F), Color(0xFF1D2455), Color(0xFF10182E))),
+                Brush.linearGradient(listOf(MorrowSurfaceRaised, MorrowSurface, MorrowSurface)),
                 shape
             )
-            .border(1.dp, accent.copy(alpha = 0.72f), shape)
+            .border(1.dp, MorrowBorder, shape)
             .clickable(onClick = onClick)
             .padding(12.dp)
     ) {
@@ -3345,11 +3670,11 @@ private fun SidebarProCard(accent: Color, onClick: () -> Unit) {
             Box(
                 modifier = Modifier
                     .clip(CircleShape)
-                    .background(Color(0xFF18385A))
-                    .border(1.dp, Color(0xFF38618A), CircleShape)
+                    .background(MorrowSelected)
+                    .border(1.dp, MorrowBorder, CircleShape)
                     .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
-                Text("Coming Soon", color = Color(0xFF9DE6FF), fontSize = 9.sp)
+                Text("COMING SOON", color = MorrowMuted, fontSize = 9.sp, letterSpacing = 0.45.sp)
             }
         }
         Spacer(Modifier.height(7.dp))

@@ -84,7 +84,7 @@ fun MorrowPrimaryButton(
     ) {
         Text(
             text,
-            color = Color.White,
+            color = Color(0xFF29232F),
             fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold
         )

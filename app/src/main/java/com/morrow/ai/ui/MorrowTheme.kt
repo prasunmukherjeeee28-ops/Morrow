@@ -5,16 +5,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 // Colors
-val MorrowBackground = Color(0xFF080A16)
-val MorrowSurface = Color(0xFF111629)
-val MorrowSurfaceRaised = Color(0xFF161C34)
-val MorrowAccent = Color(0xFFA78BFA)
-val MorrowAccentStrong = Color(0xFF7C5CFF)
-val MorrowText = Color(0xFFF1F5FF)
-val MorrowMuted = Color(0xFF9AA8C7)
-val MorrowBorder = Color(0xFF26304B)
-val MorrowChipFill = Color(0xFF1A1534)
-val MorrowChipBorder = Color(0xFF3B3170)
+val MorrowBackground = Color(0xFF080A13)
+val MorrowSurface = Color(0xFF111421)
+val MorrowSurfaceRaised = Color(0xFF191D30)
+val MorrowAccent = Color(0xFFB7A0FF)
+val MorrowAccentStrong = Color(0xFF9073E6)
+val MorrowText = Color(0xFFF5F3FF)
+val MorrowMuted = Color(0xFF9EA4C4)
+val MorrowBorder = Color(0xFF292D43)
+val MorrowChipFill = Color(0xFF17192A)
+val MorrowChipBorder = Color(0xFF343550)
 
 // Shapes
 val MorrowRadiusSmall = RoundedCornerShape(12.dp)
