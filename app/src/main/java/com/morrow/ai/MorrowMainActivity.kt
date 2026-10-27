@@ -595,7 +595,7 @@ private fun MorrowMainScreen() {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val settingsPrefs = remember { context.getSharedPreferences(PREFS_SETTINGS, Context.MODE_PRIVATE) }
 
-    var landscapeOn by remember { mutableStateOf(settingsPrefs.getBoolean(KEY_LANDSCAPE, true)) }
+    var landscapeOn by remember { mutableStateOf(settingsPrefs.getBoolean(KEY_LANDSCAPE, false)) }
     var accentIndex by remember { mutableIntStateOf(settingsPrefs.getInt(KEY_ACCENT, 0)) }
     val accent = MorrowAccentChoices[accentIndex.coerceIn(0, MorrowAccentChoices.lastIndex)]
 
@@ -1031,7 +1031,7 @@ private fun MorrowMainScreen() {
                                         .clip(RoundedCornerShape(13.dp))
                                         .background(
                                             brush = if (selected) {
-                                                Brush.linearGradient(listOf(Color(0xFF30206B), Color(0xFF171D43)))
+                                                Brush.linearGradient(listOf(MorrowSelected, MorrowSelected))
                                             } else {
                                                 Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
                                             },
