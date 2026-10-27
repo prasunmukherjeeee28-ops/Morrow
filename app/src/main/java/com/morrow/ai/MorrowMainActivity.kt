@@ -143,6 +143,8 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -1861,13 +1863,18 @@ private fun MorrowMessageRow(
     onEdit: (MorrowChatMessage) -> Unit,
     onTypingDone: () -> Unit
 ) {
-    val accent = LocalMorrowAccent.current
     var showUserMessageMenu by remember(message.id) { mutableStateOf(false) }
     var selectingText by remember(message.id) { mutableStateOf(false) }
     val sentAt = remember(message.id) {
         message.id.substringAfterLast("_").toLongOrNull()?.let { timestamp ->
             SimpleDateFormat("MMM d, yyyy • h:mm a", Locale.getDefault()).format(Date(timestamp))
         } ?: "Time unavailable"
+    }
+
+    val messageTime = remember(message.id) {
+        message.id.substringAfterLast("_").toLongOrNull()?.let { timestamp ->
+            SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(timestamp))
+        } ?: ""
     }
 
     val entrance = remember { Animatable(0f) }
@@ -1900,18 +1907,25 @@ private fun MorrowMessageRow(
                 if (message.text.isNotBlank()) {
                     Box(
                         modifier = Modifier
-                            .widthIn(max = 300.dp)
+                            .widthIn(max = 320.dp)
                             .clip(RoundedCornerShape(20.dp))
                             .background(
                                 Brush.linearGradient(
-                                    colors = listOf(accent, lerp(accent, Color.Black, 0.45f))
+                                    colors = listOf(Color(0xFF272E45), Color(0xFF1B2236))
                                 )
                             )
+                            .border(1.dp, MorrowBorder.copy(alpha = 0.9f), RoundedCornerShape(20.dp))
                             .combinedClickable(onClick = {}, onLongClick = { showUserMessageMenu = true })
                             .padding(horizontal = 16.dp, vertical = 12.dp)
                     ) {
-                        if (selectingText) SelectionContainer { Text(message.text, color = Color.White, fontSize = 15.sp, lineHeight = 23.sp) }
-                        else Text(message.text, color = Color.White, fontSize = 15.sp, lineHeight = 23.sp)
+                        Column(horizontalAlignment = Alignment.End) {
+                            if (selectingText) SelectionContainer { Text(message.text, color = MorrowText, fontSize = 15.sp, lineHeight = 23.sp) }
+                            else Text(message.text, color = MorrowText, fontSize = 15.sp, lineHeight = 23.sp)
+                            if (messageTime.isNotBlank()) {
+                                Spacer(Modifier.height(6.dp))
+                                Text(messageTime, color = MorrowMuted.copy(alpha = 0.85f), fontSize = 10.sp)
+                            }
+                        }
                     }
                 }
                 if (showUserMessageMenu) {
@@ -1943,20 +1957,34 @@ private fun MorrowMessageRow(
             }
         } else {
             Column(modifier = Modifier.fillMaxWidth()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    BrandMark(Modifier.size(24.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "Morrow",
-                        color = accent,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 12.sp,
-                        letterSpacing = 0.5.sp
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    BrandMark(Modifier.size(28.dp))
+                    Spacer(Modifier.width(9.dp))
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(MorrowSurfaceRaised)
+                            .border(1.dp, MorrowBorder.copy(alpha = 0.9f), RoundedCornerShape(20.dp))
+                            .padding(horizontal = 15.dp, vertical = 13.dp)
+                    ) {
+                        if (isTyping) TypewriterMarkdown(text = message.text, skipRequested = typingSkip, onFinished = onTypingDone)
+                        else SelectionContainer { MorrowMarkdown(text = message.text) }
+
+                        if (messageTime.isNotBlank()) {
+                            Spacer(Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                Text(messageTime, color = MorrowMuted.copy(alpha = 0.82f), fontSize = 10.sp)
+                            }
+                        }
+                    }
                 }
-                Spacer(Modifier.height(4.dp))
-                if (isTyping) TypewriterMarkdown(text = message.text, skipRequested = typingSkip, onFinished = onTypingDone)
-                else SelectionContainer { MorrowMarkdown(text = message.text) }
                 if (!isTyping) {
                     MessageActionRow(
                         message = message,
@@ -1966,7 +1994,8 @@ private fun MorrowMessageRow(
                         onShare = onShare,
                         onSpeak = onSpeak,
                         onFeedback = onFeedback,
-                        onRegenerate = onRegenerate
+                        onRegenerate = onRegenerate,
+                        modifier = Modifier.padding(start = 37.dp, top = 7.dp)
                     )
                 }
             }
@@ -1974,7 +2003,8 @@ private fun MorrowMessageRow(
     }
 }
 
-/** Copy, share, read aloud, thumbs up/down, and regenerate, shown under each reply. */
+/** Compact icon-only actions under each assistant reply. Existing callbacks preserve copy,
+ * share, text-to-speech, feedback, and regenerate behavior. */
 @Composable
 private fun MessageActionRow(
     message: MorrowChatMessage,
@@ -1984,53 +2014,63 @@ private fun MessageActionRow(
     onShare: () -> Unit,
     onSpeak: () -> Unit,
     onFeedback: (Int) -> Unit,
-    onRegenerate: () -> Unit
+    onRegenerate: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val accent = LocalMorrowAccent.current
     Row(
-        modifier = Modifier.padding(top = 6.dp, start = 2.dp),
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        ActionIcon(onClick = onCopy) {
-            CopyIcon(modifier = Modifier.size(18.dp), tint = MorrowMuted)
+        ActionIcon(label = "Copy reply", onClick = onCopy) {
+            CopyIcon(modifier = Modifier.size(17.dp), tint = MorrowMuted)
         }
-        ActionIcon(onClick = onShare) {
-            ShareIcon(modifier = Modifier.size(18.dp), tint = MorrowMuted)
+        ActionIcon(label = "Share reply", onClick = onShare) {
+            ShareIcon(modifier = Modifier.size(17.dp), tint = MorrowMuted)
         }
-        ActionIcon(onClick = onSpeak) {
+        ActionIcon(label = if (isSpeaking) "Stop reading aloud" else "Read aloud", onClick = onSpeak) {
             SpeakIcon(
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(17.dp),
                 tint = if (isSpeaking) accent else MorrowMuted
             )
         }
-        ActionIcon(onClick = { onFeedback(1) }) {
+        ActionIcon(label = "Like reply", onClick = { onFeedback(1) }) {
             ThumbIcon(
                 down = false,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(17.dp),
                 tint = if (message.feedback == 1) accent else MorrowMuted
             )
         }
-        ActionIcon(onClick = { onFeedback(-1) }) {
+        ActionIcon(label = "Dislike reply", onClick = { onFeedback(-1) }) {
             ThumbIcon(
                 down = true,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(17.dp),
                 tint = if (message.feedback == -1) accent else MorrowMuted
             )
         }
         if (canRegenerate) {
-            ActionIcon(onClick = onRegenerate) {
-                RefreshIcon(modifier = Modifier.size(18.dp), tint = MorrowMuted)
+            ActionIcon(label = "Regenerate reply", onClick = onRegenerate) {
+                RefreshIcon(modifier = Modifier.size(17.dp), tint = MorrowMuted)
             }
         }
     }
 }
 
 @Composable
-private fun ActionIcon(onClick: () -> Unit, content: @Composable () -> Unit) {
+private fun ActionIcon(
+    label: String,
+    onClick: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    val shape = RoundedCornerShape(11.dp)
     Box(
         modifier = Modifier
             .size(34.dp)
-            .clip(CircleShape)
+            .clip(shape)
+            .background(MorrowSurface)
+            .border(1.dp, MorrowBorder, shape)
+            .semantics { contentDescription = label }
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
