@@ -23,6 +23,8 @@ import android.widget.Toast
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.cos
+import kotlin.math.sin
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -1525,6 +1527,12 @@ private fun WelcomeHero(
             horizontalAlignment = Alignment.Start,
             verticalArrangement = Arrangement.Center
         ) {
+            MorrowSignatureOrb(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(172.dp)
+            )
+            Spacer(Modifier.height(2.dp))
             Text(
                 clock.phase.greeting,
                 color = accent,
@@ -1595,6 +1603,173 @@ private fun WelcomeHero(
                 )
             }
         }
+    }
+}
+
+private data class OrbParticle(
+    val angle: Float,
+    val orbitScale: Float,
+    val sizeScale: Float,
+    val speed: Float,
+    val phase: Float
+)
+
+@Composable
+private fun MorrowSignatureOrb(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "morrowOrb")
+    val rotation by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 18000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "orbRotation"
+    )
+    val floatMotion by transition.animateFloat(
+        initialValue = -1f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 3400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "orbFloat"
+    )
+    val density = LocalDensity.current
+    val bobPx = with(density) { (floatMotion * 4.dp).toPx() }
+    val particles = remember {
+        List(20) { index ->
+            OrbParticle(
+                angle = (index * 137.5f) % 360f,
+                orbitScale = 1.18f + ((index * 7) % 9) / 18f,
+                sizeScale = 0.7f + ((index * 3) % 6) / 10f,
+                speed = if (index % 2 == 0) 0.75f else -0.52f,
+                phase = ((index * 13) % 17) / 17f
+            )
+        }
+    }
+
+    Canvas(modifier = modifier) {
+        val centerX = size.width / 2f
+        val centerY = size.height / 2f + bobPx
+        val radius = minOf(size.width * 0.245f, size.height * 0.405f)
+        if (radius <= 0f) return@Canvas
+
+        // Soft ambient halo: one broad gradient, no image assets or blur layers.
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color(0x263F344B),
+                    Color(0x12352D40),
+                    Color.Transparent
+                ),
+                center = Offset(centerX, centerY),
+                radius = radius * 1.85f
+            ),
+            radius = radius * 1.85f,
+            center = Offset(centerX, centerY)
+        )
+
+        // Fine orbit tracks create depth without a heavy 3D renderer.
+        val orbitWidth = radius * 3.05f
+        val orbitHeight = radius * 1.10f
+        drawArc(
+            brush = Brush.sweepGradient(
+                colors = listOf(
+                    Color.Transparent,
+                    Color(0x55B8A8D0),
+                    Color(0x168E829F),
+                    Color.Transparent,
+                    Color(0x40D9D0E5),
+                    Color.Transparent
+                ),
+                center = Offset(centerX, centerY)
+            ),
+            startAngle = rotation * 360f + 12f,
+            sweepAngle = 300f,
+            useCenter = false,
+            topLeft = Offset(centerX - orbitWidth / 2f, centerY - orbitHeight / 2f),
+            size = Size(orbitWidth, orbitHeight),
+            style = Stroke(width = 1.1.dp.toPx())
+        )
+        drawArc(
+            color = Color(0x268F829F),
+            startAngle = 195f - rotation * 210f,
+            sweepAngle = 145f,
+            useCenter = false,
+            topLeft = Offset(centerX - orbitWidth * 0.44f, centerY - orbitHeight * 0.78f),
+            size = Size(orbitWidth * 0.88f, orbitHeight * 1.56f),
+            style = Stroke(width = 0.8.dp.toPx())
+        )
+
+        // Draw the sphere with radial shading and a restrained pearl-lilac core.
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color(0xFFE9E2F1),
+                    Color(0xFFB9A9D0),
+                    Color(0xFF756781),
+                    Color(0xFF29252F)
+                ),
+                center = Offset(centerX - radius * 0.34f, centerY - radius * 0.42f),
+                radius = radius * 1.62f
+            ),
+            radius = radius,
+            center = Offset(centerX, centerY)
+        )
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color(0xC8FFFFFF),
+                    Color(0x55E7DDF4),
+                    Color.Transparent
+                ),
+                center = Offset(centerX - radius * 0.37f, centerY - radius * 0.47f),
+                radius = radius * 0.88f
+            ),
+            radius = radius * 0.96f,
+            center = Offset(centerX, centerY)
+        )
+        drawCircle(
+            color = Color(0x668F7CA8),
+            radius = radius * 0.94f,
+            center = Offset(centerX, centerY),
+            style = Stroke(width = 1.dp.toPx())
+        )
+
+        // Tiny orbiting particles fade in and out; their positions are deterministic,
+        // so there is no per-frame allocation or random-number generation.
+        particles.forEach { particle ->
+            val angle = (
+                particle.angle + rotation * 360f * particle.speed + particle.phase * 360f
+            ) * (Math.PI.toFloat() / 180f)
+            val orbitX = radius * particle.orbitScale * 1.52f
+            val orbitY = radius * particle.orbitScale * 0.56f
+            val px = centerX + cos(angle.toDouble()).toFloat() * orbitX
+            val py = centerY + sin(angle.toDouble()).toFloat() * orbitY
+            val fade = (0.5f + 0.5f * sin((angle + particle.phase * 6.28f).toDouble()).toFloat())
+            val alpha = 0.10f + fade * 0.62f
+            val particleRadius = (1.1f + particle.sizeScale * 1.25f).dp.toPx()
+            drawCircle(
+                color = if (particle.phase > 0.48f) {
+                    Color(0xFFE5D9F2).copy(alpha = alpha)
+                } else {
+                    Color(0xFFB8A8D0).copy(alpha = alpha)
+                },
+                radius = particleRadius,
+                center = Offset(px, py)
+            )
+        }
+
+        // A small moving glint makes the orb feel alive without flashing.
+        val glintAngle = (rotation * 360f - 135f) * (Math.PI.toFloat() / 180f)
+        val glintX = centerX + cos(glintAngle.toDouble()).toFloat() * radius * 0.57f
+        val glintY = centerY + sin(glintAngle.toDouble()).toFloat() * radius * 0.57f
+        drawCircle(
+            color = Color.White.copy(alpha = 0.58f),
+            radius = 1.5.dp.toPx(),
+            center = Offset(glintX, glintY)
+        )
     }
 }
 
