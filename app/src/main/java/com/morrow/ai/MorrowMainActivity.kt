@@ -1415,51 +1415,99 @@ private fun ExploreScreen(
     onPromptClick: (String) -> Unit
 ) {
     val accent = LocalMorrowAccent.current
-    val prompts = MarqueeRowOnePrompts + MarqueeRowTwoPrompts + MarqueeRowThreePrompts
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MorrowBackground)
-    ) {
+    Column(modifier = Modifier.fillMaxSize().background(MorrowBackground)) {
         Row(
-            modifier = Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(horizontal = 8.dp),
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().height(60.dp).padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) { BackIcon(tint = accent) }
-            Text("Explore", color = MorrowText, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-        }
-        Text(
-            "A starting point for whatever you're thinking about.",
-            color = MorrowMuted,
-            fontSize = 13.sp,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-        )
-        LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(9.dp)
-        ) {
-            itemsIndexed(prompts) { _, prompt ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(15.dp))
-                        .background(
-                            Brush.linearGradient(listOf(MorrowSurfaceRaised, MorrowSurface)),
-                            RoundedCornerShape(15.dp)
-                        )
-                        .border(1.dp, MorrowBorder, RoundedCornerShape(15.dp))
-                        .clickable { onPromptClick(prompt) }
-                        .padding(15.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Text(prompt, color = MorrowText, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                    Icon(Icons.Outlined.ArrowForward, contentDescription = null, tint = MorrowMuted, modifier = Modifier.size(18.dp))
-                }
+            Column {
+                Text("Tools & ideas", color = MorrowText, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text("A useful place to start", color = MorrowMuted, fontSize = 11.sp)
             }
         }
+        Column(
+            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 10.dp)
+        ) {
+            Text("What are we working on?", color = MorrowText, fontSize = 25.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.5).sp)
+            Spacer(Modifier.height(7.dp))
+            Text("Choose a starting point. Each shortcut opens a real chat with Morrow.", color = MorrowMuted, fontSize = 13.sp, lineHeight = 19.sp)
+            Spacer(Modifier.height(20.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ToolActionCard(
+                    title = "Study & learn", detail = "Break down tough topics", icon = { Icon(Icons.Outlined.School, contentDescription = null, tint = accent, modifier = Modifier.size(21.dp)) },
+                    modifier = Modifier.weight(1f),
+                    onClick = { onPromptClick("Teach me this topic step by step in simple language. Start with the basics and give an example.") }
+                )
+                ToolActionCard(
+                    title = "Coding help", detail = "Build, fix, understand", icon = { Icon(Icons.Outlined.Code, contentDescription = null, tint = accent, modifier = Modifier.size(21.dp)) },
+                    modifier = Modifier.weight(1f),
+                    onClick = { onPromptClick("Help me with a coding project. Ask what I want to build, then guide me step by step and explain the code.") }
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ToolActionCard(
+                    title = "Writing", detail = "Make words sound natural", icon = { Icon(Icons.Outlined.EditNote, contentDescription = null, tint = accent, modifier = Modifier.size(21.dp)) },
+                    modifier = Modifier.weight(1f),
+                    onClick = { onPromptClick("Help me write this in a natural, human-sounding way. Ask me what it's for if that isn't clear.") }
+                )
+                ToolActionCard(
+                    title = "Project planner", detail = "Turn an idea into steps", icon = { Icon(Icons.Outlined.Checklist, contentDescription = null, tint = accent, modifier = Modifier.size(21.dp)) },
+                    modifier = Modifier.weight(1f),
+                    onClick = { onPromptClick("Help me turn an idea into a practical project plan with clear steps, priorities, and free tools where possible.") }
+                )
+            }
+            Spacer(Modifier.height(24.dp))
+            Text("QUICK PROMPTS", color = MorrowMuted, fontSize = 10.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(9.dp))
+            val prompts = listOf(
+                "Explain a concept like I'm new to it" to "Explain a topic from the ground up with a simple example.",
+                "Help me debug something" to "Help me debug a problem. Ask for the error and relevant code before suggesting a fix.",
+                "Compare two options" to "Help me compare two options fairly, including trade-offs and which fits my needs.",
+                "Brainstorm fresh ideas" to "Brainstorm useful, original ideas with me and explain the strongest few."
+            )
+            Column(
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xFF101321)).border(1.dp, MorrowBorder, RoundedCornerShape(18.dp))
+            ) {
+                prompts.forEachIndexed { index, item ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { onPromptClick(item.second) }.padding(horizontal = 13.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(Color(0xFF25203B)), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = accent, modifier = Modifier.size(17.dp))
+                        }
+                        Spacer(Modifier.width(11.dp))
+                        Text(item.first, color = MorrowText, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                        Icon(Icons.Outlined.ArrowForward, contentDescription = null, tint = MorrowMuted, modifier = Modifier.size(17.dp))
+                    }
+                    if (index != prompts.lastIndex) HorizontalDivider(color = MorrowBorder.copy(alpha = 0.75f), modifier = Modifier.padding(start = 58.dp))
+                }
+            }
+            Spacer(Modifier.height(20.dp))
+        }
+    }
+}
+
+@Composable
+private fun ToolActionCard(
+    title: String,
+    detail: String,
+    icon: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+            .background(Brush.linearGradient(listOf(Color(0xFF1C1A2B), Color(0xFF121520))))
+            .border(1.dp, Color(0xFF34314B), RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Box(Modifier.size(39.dp).clip(RoundedCornerShape(13.dp)).background(Color(0xFF2A2340)), contentAlignment = Alignment.Center) { icon() }
+        Text(title, color = MorrowText, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        Text(detail, color = MorrowMuted, fontSize = 11.sp, lineHeight = 15.sp)
     }
 }
 
