@@ -186,27 +186,27 @@ import kotlin.random.Random
 
 // ---------- Colors ----------
 
-private val MorrowBackground = Color(0xFF111113)
-private val MorrowSurface = Color(0xFF19191D)
-private val MorrowSurfaceRaised = Color(0xFF222227)
-private val MorrowSidebar = Color(0xFF151517)
-private val MorrowAccentDefault = Color(0xFFB8A8D0)
-private val MorrowVioletDeep = Color(0xFF51465F)
-private val MorrowCoreLight = Color(0xFFE8E0F0)
-private val MorrowText = Color(0xFFF3F1F5)
-private val MorrowMuted = Color(0xFFA5A1AA)
-private val MorrowBorder = Color(0xFF302E34)
-private val MorrowSelected = Color(0xFF252329)
-private val MorrowChipFill = Color(0xFF201F23)
-private val MorrowChipBorder = Color(0xFF39353E)
-private val MorrowCodeBg = Color(0xFF141417)
+private val MorrowBackground = Color(0xFF080A13)
+private val MorrowSurface = Color(0xFF111421)
+private val MorrowSurfaceRaised = Color(0xFF191D30)
+private val MorrowSidebar = Color(0xFF0C0F1B)
+private val MorrowAccentDefault = Color(0xFFB7A0FF)
+private val MorrowVioletDeep = Color(0xFF55468F)
+private val MorrowCoreLight = Color(0xFFF0E9FF)
+private val MorrowText = Color(0xFFF5F3FF)
+private val MorrowMuted = Color(0xFF9EA4C4)
+private val MorrowBorder = Color(0xFF292D43)
+private val MorrowSelected = Color(0xFF211E38)
+private val MorrowChipFill = Color(0xFF17192A)
+private val MorrowChipBorder = Color(0xFF343550)
+private val MorrowCodeBg = Color(0xFF0C1020)
 private val MorrowDanger = Color(0xFFE18484)
 
 private val MorrowAccentChoices = listOf(
-    Color(0xFFB8A8D0), // Soft violet
-    Color(0xFFD1A4AF), // Muted rose
-    Color(0xFFD0B482), // Warm amber
-    Color(0xFF9FBAA7)  // Sage
+    Color(0xFFB7A0FF), // Soft violet
+    Color(0xFFE1A4D6), // Muted rose
+    Color(0xFFE8BE8A), // Warm amber
+    Color(0xFF97D9C0)  // Mint
 )
 private val MorrowAccentNames = listOf("Violet", "Rose", "Amber", "Emerald")
 
