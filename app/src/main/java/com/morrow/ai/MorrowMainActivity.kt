@@ -184,27 +184,27 @@ import kotlin.random.Random
 
 // ---------- Colors ----------
 
-private val MorrowBackground = Color(0xFF080A16)
-private val MorrowSurface = Color(0xFF111629)
-private val MorrowSurfaceRaised = Color(0xFF161C34)
-private val MorrowSidebar = Color(0xFF0B1020)
-private val MorrowAccentDefault = Color(0xFFA78BFA)
-private val MorrowVioletDeep = Color(0xFF4B2BD6)
-private val MorrowCoreLight = Color(0xFFE4DBFF)
-private val MorrowText = Color(0xFFF1F5FF)
-private val MorrowMuted = Color(0xFF9AA8C7)
-private val MorrowBorder = Color(0xFF26304B)
-private val MorrowSelected = Color(0xFF1E1A33)
-private val MorrowChipFill = Color(0xFF1A1534)
-private val MorrowChipBorder = Color(0xFF3B3170)
-private val MorrowCodeBg = Color(0xFF0A0D1F)
-private val MorrowDanger = Color(0xFFF87171)
+private val MorrowBackground = Color(0xFF111113)
+private val MorrowSurface = Color(0xFF19191D)
+private val MorrowSurfaceRaised = Color(0xFF222227)
+private val MorrowSidebar = Color(0xFF151517)
+private val MorrowAccentDefault = Color(0xFFB8A8D0)
+private val MorrowVioletDeep = Color(0xFF51465F)
+private val MorrowCoreLight = Color(0xFFE8E0F0)
+private val MorrowText = Color(0xFFF3F1F5)
+private val MorrowMuted = Color(0xFFA5A1AA)
+private val MorrowBorder = Color(0xFF302E34)
+private val MorrowSelected = Color(0xFF252329)
+private val MorrowChipFill = Color(0xFF201F23)
+private val MorrowChipBorder = Color(0xFF39353E)
+private val MorrowCodeBg = Color(0xFF141417)
+private val MorrowDanger = Color(0xFFE18484)
 
 private val MorrowAccentChoices = listOf(
-    Color(0xFFA78BFA), // Violet
-    Color(0xFFFB7185), // Rose
-    Color(0xFFFBBF24), // Amber
-    Color(0xFF34D399)  // Emerald
+    Color(0xFFB8A8D0), // Soft violet
+    Color(0xFFD1A4AF), // Muted rose
+    Color(0xFFD0B482), // Warm amber
+    Color(0xFF9FBAA7)  // Sage
 )
 private val MorrowAccentNames = listOf("Violet", "Rose", "Amber", "Emerald")
 
@@ -231,7 +231,7 @@ private const val WELCOME_ID = "welcome"
 private const val PREFS_CHATS = "morrow_chats"
 private const val PREFS_SETTINGS = "morrow_settings"
 private const val KEY_CHATS_JSON = "chats_json"
-private const val KEY_LANDSCAPE = "landscape_on"
+private const val KEY_LANDSCAPE = "landscape_on_v2"
 private const val KEY_ACCENT = "accent_index"
 
 // ---------- Prompt marquee tuning ----------
@@ -1039,7 +1039,7 @@ private fun MorrowMainScreen() {
                                         )
                                         .border(
                                             width = if (selected) 1.dp else 0.dp,
-                                            color = if (selected) accent.copy(alpha = 0.8f) else Color.Transparent,
+                                            color = if (selected) accent.copy(alpha = 0.32f) else Color.Transparent,
                                             shape = RoundedCornerShape(13.dp)
                                         )
                                         .combinedClickable(
@@ -1161,14 +1161,7 @@ private fun MorrowMainScreen() {
                                 onPromptClick = { input = it }
                             )
                         } else {
-                            Box(modifier = Modifier.fillMaxSize()) {
-                                LandscapeBackdrop(
-                                    palette = palette,
-                                    animate = landscapeOn,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .graphicsLayer { alpha = 0.3f }
-                                )
+                            Box(modifier = Modifier.fillMaxSize().background(MorrowBackground)) {
                                 MessageList(
                                     messages = currentMessages,
                                     isLoading = isLoading,
@@ -1511,55 +1504,134 @@ private fun WelcomeHero(
     onPromptClick: (String) -> Unit
 ) {
     val accent = LocalMorrowAccent.current
-    Box(modifier = Modifier.fillMaxSize()) {
-        LandscapeBackdrop(palette = palette, animate = animate, modifier = Modifier.fillMaxSize())
-
-        Crossfade(
-            targetState = clock.phase,
-            modifier = Modifier
-                .align(androidx.compose.ui.Alignment.TopCenter)
-                .fillMaxWidth()
-                .padding(top = 36.dp, start = 24.dp, end = 24.dp),
-            label = "heroText"
-        ) { phase ->
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    phase.greeting,
-                    color = accent,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    letterSpacing = 0.6.sp
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "${phase.label.uppercase()}  ·  ${clock.timeText}",
-                    color = MorrowMuted,
-                    fontSize = 11.sp,
-                    letterSpacing = 1.2.sp
-                )
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    phase.headline,
-                    color = MorrowText,
-                    fontSize = 26.sp,
-                    lineHeight = 32.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center
-                )
-            }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MorrowBackground)
+    ) {
+        // The optional scene is deliberately restrained and disabled by default.
+        if (animate) {
+            LandscapeBackdrop(
+                palette = palette,
+                animate = true,
+                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 0.08f }
+            )
         }
 
         Column(
             modifier = Modifier
-                .align(androidx.compose.ui.Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(bottom = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .fillMaxSize()
+                .padding(horizontal = 22.dp, vertical = 18.dp),
+            horizontalAlignment = Alignment.Start,
+            verticalArrangement = Arrangement.Center
         ) {
-            PromptMarqueeRow(MarqueeRowOnePrompts, reverse = false, onPromptClick = onPromptClick)
-            PromptMarqueeRow(MarqueeRowTwoPrompts, reverse = true, onPromptClick = onPromptClick)
-            PromptMarqueeRow(MarqueeRowThreePrompts, reverse = false, onPromptClick = onPromptClick)
+            Text(
+                clock.phase.greeting,
+                color = accent,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "What’s on your mind?",
+                color = MorrowText,
+                fontSize = 29.sp,
+                lineHeight = 35.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Ask a question, explore an idea, or get help moving something forward.",
+                color = MorrowMuted,
+                fontSize = 14.sp,
+                lineHeight = 21.sp
+            )
+            Spacer(Modifier.height(28.dp))
+            Text(
+                "A FEW PLACES TO START",
+                color = MorrowMuted,
+                fontSize = 10.sp,
+                letterSpacing = 1.25.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                WelcomePromptCard(
+                    title = "Learn",
+                    detail = "Understand a tricky topic",
+                    prompt = "Explain a hard idea simply",
+                    onPromptClick = onPromptClick,
+                    modifier = Modifier.weight(1f)
+                )
+                WelcomePromptCard(
+                    title = "Create",
+                    detail = "Find a fresh direction",
+                    prompt = "Give me three creative project ideas",
+                    onPromptClick = onPromptClick,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                WelcomePromptCard(
+                    title = "Plan",
+                    detail = "Break it into steps",
+                    prompt = "Help me plan a project step by step",
+                    onPromptClick = onPromptClick,
+                    modifier = Modifier.weight(1f)
+                )
+                WelcomePromptCard(
+                    title = "Write",
+                    detail = "Get the words right",
+                    prompt = "Draft a message to a friend",
+                    onPromptClick = onPromptClick,
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun WelcomePromptCard(
+    title: String,
+    detail: String,
+    prompt: String,
+    onPromptClick: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val shape = RoundedCornerShape(16.dp)
+    Column(
+        modifier = modifier
+            .height(82.dp)
+            .clip(shape)
+            .background(MorrowSurface)
+            .border(1.dp, MorrowBorder, shape)
+            .clickable { onPromptClick(prompt) }
+            .padding(horizontal = 13.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            title,
+            color = MorrowText,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium
+        )
+        Spacer(Modifier.height(5.dp))
+        Text(
+            detail,
+            color = MorrowMuted,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -1902,11 +1974,8 @@ private fun MorrowMessageRow(
                         modifier = Modifier
                             .widthIn(max = 300.dp)
                             .clip(RoundedCornerShape(20.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    colors = listOf(accent, lerp(accent, Color.Black, 0.45f))
-                                )
-                            )
+                            .background(Color(0xFF25232A))
+                            .border(1.dp, Color(0xFF39363F), RoundedCornerShape(20.dp))
                             .combinedClickable(onClick = {}, onLongClick = { showUserMessageMenu = true })
                             .padding(horizontal = 16.dp, vertical = 12.dp)
                     ) {
@@ -2493,12 +2562,12 @@ private fun MorrowComposer(
     val canSend = (inputText.isNotBlank() || attachments.isNotEmpty()) && !busy
 
     val borderColor by animateColorAsState(
-        targetValue = if (focused) accent.copy(alpha = 0.85f) else MorrowBorder,
+        targetValue = if (focused) accent.copy(alpha = 0.48f) else MorrowBorder,
         animationSpec = tween(durationMillis = 250),
         label = "composerBorder"
     )
     val sendTint by animateColorAsState(
-        targetValue = if (busy || canSend) accent else Color(0xFF2A2440),
+        targetValue = if (busy || canSend) accent else Color(0xFF2B292E),
         animationSpec = tween(durationMillis = 220),
         label = "sendTint"
     )
@@ -2620,7 +2689,7 @@ private fun MorrowComposer(
                     )
                 } else {
                     ArrowUpIcon(
-                        tint = if (canSend) Color.White else MorrowMuted,
+                        tint = if (canSend) Color(0xFF29232F) else MorrowMuted,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -2698,10 +2767,10 @@ private fun SettingsScreen(
             SettingsSection(title = "Animation") {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Animated landscape", color = MorrowText, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                        Text("Animated welcome background", color = MorrowText, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            "Turn off to save battery. The sky still changes with the time of day.",
+                            "Adds a subtle time-of-day scene to the welcome screen. Turn it off for a clean background.",
                             color = MorrowMuted,
                             fontSize = 12.sp,
                             lineHeight = 17.sp
@@ -3294,7 +3363,7 @@ private fun SidebarAction(
             .clip(RoundedCornerShape(14.dp))
             .background(
                 brush = if (selected) {
-                    Brush.linearGradient(listOf(Color(0xFF30206B), Color(0xFF192047)))
+                    Brush.linearGradient(listOf(MorrowSelected, MorrowSelected))
                 } else {
                     Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
                 },
@@ -3302,7 +3371,7 @@ private fun SidebarAction(
             )
             .border(
                 width = if (selected) 1.dp else 0.dp,
-                color = if (selected) accent.copy(alpha = 0.72f) else Color.Transparent,
+                color = if (selected) accent.copy(alpha = 0.30f) else Color.Transparent,
                 shape = RoundedCornerShape(14.dp)
             )
             .clickable(onClick = onClick)
@@ -3330,10 +3399,10 @@ private fun SidebarProCard(accent: Color, onClick: () -> Unit) {
             .fillMaxWidth()
             .clip(shape)
             .background(
-                Brush.linearGradient(listOf(Color(0xFF26145F), Color(0xFF1D2455), Color(0xFF10182E))),
+                Brush.linearGradient(listOf(MorrowSurfaceRaised, MorrowSurface, MorrowSurface)),
                 shape
             )
-            .border(1.dp, accent.copy(alpha = 0.72f), shape)
+            .border(1.dp, MorrowBorder, shape)
             .clickable(onClick = onClick)
             .padding(12.dp)
     ) {
@@ -3345,11 +3414,11 @@ private fun SidebarProCard(accent: Color, onClick: () -> Unit) {
             Box(
                 modifier = Modifier
                     .clip(CircleShape)
-                    .background(Color(0xFF18385A))
-                    .border(1.dp, Color(0xFF38618A), CircleShape)
+                    .background(MorrowSelected)
+                    .border(1.dp, MorrowBorder, CircleShape)
                     .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
-                Text("Coming Soon", color = Color(0xFF9DE6FF), fontSize = 9.sp)
+                Text("COMING SOON", color = MorrowMuted, fontSize = 9.sp, letterSpacing = 0.45.sp)
             }
         }
         Spacer(Modifier.height(7.dp))
