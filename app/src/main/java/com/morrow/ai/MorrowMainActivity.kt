@@ -1552,7 +1552,7 @@ private fun LibraryScreen(
         )
         if (visibleChats.isEmpty()) {
             Column(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 28.dp),
+                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 28.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
@@ -2265,7 +2265,13 @@ private fun MorrowMessageRow(
                 }
             }
         } else {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.fillMaxWidth()
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Brush.linearGradient(listOf(Color(0xFF121625), Color(0xFF10131F))), RoundedCornerShape(20.dp))
+                    .border(1.dp, Color(0xFF272D44), RoundedCornerShape(20.dp))
+                    .padding(14.dp)
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     BrandMark(Modifier.size(24.dp))
                     Spacer(Modifier.width(8.dp))
