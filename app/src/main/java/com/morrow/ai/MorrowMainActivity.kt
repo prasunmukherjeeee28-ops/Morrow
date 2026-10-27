@@ -1466,6 +1466,7 @@ private fun MessageList(
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun MorrowMessageRow(
     message: MorrowChatMessage,
