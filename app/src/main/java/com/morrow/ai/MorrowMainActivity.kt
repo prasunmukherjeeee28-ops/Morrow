@@ -2335,12 +2335,16 @@ private fun MorrowMarkdown(text: String, modifier: Modifier = Modifier) {
     }
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(13.dp)
     ) {
         blocks.forEach { block ->
             when (block) {
                 is MdHeading -> MdHeadingBlock(block)
-                is MdParagraph -> InlineText(text = block.text, fontSize = 15.sp, lineHeight = 24.sp)
+                is MdParagraph -> InlineText(
+                    text = block.text,
+                    fontSize = 15.5.sp,
+                    lineHeight = 26.sp
+                )
                 is MdCode -> MdCodeBlock(block.language, block.code)
                 is MdQuote -> MdQuoteBlock(block.text)
                 is MdList -> MdListBlock(block.items)
@@ -2348,7 +2352,7 @@ private fun MorrowMarkdown(text: String, modifier: Modifier = Modifier) {
                 MdRule -> Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 6.dp)
+                        .padding(vertical = 7.dp)
                         .height(1.dp)
                         .background(MorrowBorder)
                 )
@@ -2377,36 +2381,59 @@ private fun MdHeadingBlock(block: MdHeading) {
 @Composable
 private fun MdCodeBlock(language: String, code: String) {
     val accent = LocalMorrowAccent.current
+    val context = LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(MorrowCodeBg)
-            .border(1.dp, MorrowBorder, RoundedCornerShape(14.dp))
+            .border(1.dp, MorrowBorder, RoundedCornerShape(16.dp))
     ) {
-        if (language.isNotBlank()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MorrowSurface)
+                .padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(accent)
+            )
+            Spacer(Modifier.width(9.dp))
             Text(
-                language.uppercase(),
+                text = language.ifBlank { "CODE" }.uppercase(Locale.ROOT),
                 color = accent,
                 fontSize = 10.sp,
-                letterSpacing = 1.2.sp,
+                letterSpacing = 1.3.sp,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MorrowSurface)
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                modifier = Modifier.weight(1f)
             )
+            IconButton(
+                onClick = {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Morrow code", code))
+                    Toast.makeText(context, "Code copied", Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier.size(36.dp)
+            ) {
+                CopyIcon(modifier = Modifier.size(16.dp), tint = MorrowMuted)
+            }
         }
+        HorizontalDivider(color = MorrowBorder.copy(alpha = 0.75f))
         Text(
-            code,
+            text = code,
             color = MorrowText,
             fontFamily = FontFamily.Monospace,
             fontSize = 13.sp,
-            lineHeight = 19.sp,
+            lineHeight = 21.sp,
             softWrap = false,
             modifier = Modifier
+                .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
-                .padding(12.dp)
+                .padding(horizontal = 14.dp, vertical = 14.dp)
         )
     }
 }
