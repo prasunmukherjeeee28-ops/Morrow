@@ -1355,7 +1355,11 @@ private fun MorrowMainScreen() {
                             pendingAttachments = pendingAttachments.filterIndexed { i, _ -> i != index }
                         },
                         onSend = { sendInput() },
-                        onStop = { stopGeneration() }
+                        onStop = { stopGeneration() },
+                        onUnsupportedTool = {
+                            attachmentsOpen = false
+                            showToolInfoDialog = true
+                        }
                     )
                     Text(
                         "Morrow can make mistakes. Check important information.",
@@ -1954,58 +1958,184 @@ private fun RecentChatsScreen(
     chats: List<MorrowConversationSession>,
     messagesByConversation: Map<String, List<MorrowChatMessage>>,
     onBackHome: () -> Unit,
+    onRenameChat: (String) -> Unit,
+    onTogglePin: (String) -> Unit,
+    onDeleteChat: (String) -> Unit,
     onOpenChat: (String) -> Unit
 ) {
     val accent = LocalMorrowAccent.current
-    Column(modifier = Modifier.fillMaxSize().background(MorrowBackground)) {
+    var search by remember { mutableStateOf("") }
+    var category by remember { mutableStateOf("All") }
+    var menuChatId by remember { mutableStateOf<String?>(null) }
+    var deletePendingId by remember { mutableStateOf<String?>(null) }
+
+    val visibleChats = chats.filter { chat ->
+        val messages = messagesByConversation[chat.id].orEmpty()
+        val searchable = buildString {
+            append(chat.title)
+            messages.forEach { append(' '); append(it.text) }
+        }
+        val matchesSearch = search.isBlank() || searchable.contains(search.trim(), ignoreCase = true)
+        val lower = searchable.lowercase(Locale.ROOT)
+        val coding = listOf("code", "coding", "python", "program", "developer", "github", "script", "bug", "app").any { it in lower }
+        val learning = listOf("class", "study", "learn", "explain", "science", "history", "radioactivity", "biology", "math", "notes", "homework").any { it in lower }
+        val matchesCategory = when (category) {
+            "Coding" -> coding
+            "Learning" -> learning && !coding
+            "General" -> !coding && !learning
+            else -> true
+        }
+        matchesSearch && matchesCategory
+    }
+
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF080B14))) {
         Row(
-            modifier = Modifier.fillMaxWidth().statusBarsPadding().height(58.dp).padding(horizontal = 10.dp),
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().height(62.dp).padding(start = 10.dp, end = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBackHome, modifier = Modifier.size(42.dp)) { BackIcon(tint = accent) }
-            Text("Chats", color = MorrowText, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+            IconButton(onClick = onBackHome, modifier = Modifier.size(44.dp)) { BackIcon(tint = MorrowText) }
+            Text("Chat History", color = MorrowText, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            IconButton(onClick = { category = if (category == "All") "General" else "All" }, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Outlined.FilterList, contentDescription = "Toggle chat categories", tint = MorrowMuted, modifier = Modifier.size(22.dp))
+            }
         }
-        if (chats.isEmpty()) {
+
+        OutlinedTextField(
+            value = search,
+            onValueChange = { search = it },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp),
+            singleLine = true,
+            leadingIcon = { SearchIcon(modifier = Modifier.size(21.dp), tint = MorrowMuted) },
+            placeholder = { Text("Search chats...", color = MorrowMuted, fontSize = 14.sp) },
+            shape = RoundedCornerShape(28.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = accent,
+                unfocusedBorderColor = MorrowBorder,
+                focusedContainerColor = MorrowSurface,
+                unfocusedContainerColor = MorrowSurface,
+                focusedTextColor = MorrowText,
+                unfocusedTextColor = MorrowText,
+                cursorColor = accent
+            )
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            listOf("All", "General", "Coding", "Learning").forEach { option ->
+                val selected = category == option
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(25.dp))
+                        .background(if (selected) accent else MorrowSurface)
+                        .border(1.dp, if (selected) accent else MorrowBorder, RoundedCornerShape(25.dp))
+                        .clickable { category = option }
+                        .padding(horizontal = 18.dp, vertical = 10.dp)
+                ) {
+                    Text(option, color = if (selected) Color(0xFF18132D) else MorrowMuted, fontSize = 13.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium)
+                }
+            }
+        }
+
+        if (visibleChats.isEmpty()) {
             Column(
                 modifier = Modifier.fillMaxSize().padding(28.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Icon(Icons.Outlined.Forum, contentDescription = null, tint = accent, modifier = Modifier.size(42.dp))
+                Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null, tint = accent, modifier = Modifier.size(42.dp))
                 Spacer(Modifier.height(13.dp))
-                Text("No chats yet", color = MorrowText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Text(if (search.isNotBlank()) "No matching chats" else "No chats yet", color = MorrowText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(5.dp))
-                Text("Start a conversation from Home.", color = MorrowMuted, fontSize = 12.sp, textAlign = TextAlign.Center)
+                Text("Try another search or category.", color = MorrowMuted, fontSize = 12.sp, textAlign = TextAlign.Center)
             }
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 17.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                contentPadding = PaddingValues(start = 17.dp, end = 12.dp, top = 14.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
-                items(chats, key = { it.id }) { chat ->
+                items(visibleChats, key = { it.id }) { chat ->
+                    val chatMessages = messagesByConversation[chat.id].orEmpty()
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(17.dp))
-                            .background(MorrowSurface)
-                            .border(1.dp, MorrowBorder, RoundedCornerShape(17.dp))
-                            .clickable { onOpenChat(chat.id) }
-                            .padding(13.dp),
+                        modifier = Modifier.fillMaxWidth().clickable { onOpenChat(chat.id) }.padding(vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null, tint = accent, modifier = Modifier.size(24.dp))
-                        Spacer(Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(chat.title, color = MorrowText, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Spacer(Modifier.height(3.dp))
-                            Text(relativeChatTime(chat.id, messagesByConversation[chat.id].orEmpty()), color = MorrowMuted, fontSize = 11.sp)
+                        Box(
+                            modifier = Modifier.size(58.dp).clip(RoundedCornerShape(17.dp)).background(Color(0xFF22253B))
+                                .border(1.dp, MorrowBorder.copy(alpha = 0.75f), RoundedCornerShape(17.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                when {
+                                    chat.title.contains("code", true) || chat.title.contains("python", true) -> Icons.Outlined.Code
+                                    chat.title.contains("study", true) || chat.title.contains("class", true) -> Icons.Outlined.School
+                                    else -> Icons.Outlined.ChatBubbleOutline
+                                },
+                                contentDescription = null, tint = accent, modifier = Modifier.size(25.dp)
+                            )
                         }
-                        Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MorrowMuted, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(13.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(chat.title, color = MorrowText, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Spacer(Modifier.height(5.dp))
+                            Text(
+                                if (chat.pinned) "Pinned · " + relativeChatTime(chat.id, chatMessages) else relativeChatTime(chat.id, chatMessages),
+                                color = MorrowMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Box {
+                            IconButton(onClick = { menuChatId = chat.id }, modifier = Modifier.size(38.dp)) {
+                                Icon(Icons.Outlined.MoreVert, contentDescription = "Chat options", tint = MorrowMuted, modifier = Modifier.size(22.dp))
+                            }
+                            DropdownMenu(
+                                expanded = menuChatId == chat.id,
+                                onDismissRequest = { menuChatId = null },
+                                containerColor = MorrowSurface,
+                                shape = RoundedCornerShape(15.dp)
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text(if (chat.pinned) "Unpin chat" else "Pin chat", color = MorrowText) },
+                                    leadingIcon = { Icon(Icons.Outlined.BookmarkBorder, contentDescription = null, tint = MorrowMuted) },
+                                    onClick = { menuChatId = null; onTogglePin(chat.id) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Rename", color = MorrowText) },
+                                    leadingIcon = { ComposeIcon(tint = MorrowMuted, modifier = Modifier.size(20.dp)) },
+                                    onClick = { menuChatId = null; onRenameChat(chat.id) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Delete", color = Color(0xFFF87171)) },
+                                    leadingIcon = { Icon(Icons.Outlined.DeleteOutline, contentDescription = null, tint = Color(0xFFF87171)) },
+                                    onClick = { menuChatId = null; deletePendingId = chat.id }
+                                )
+                            }
+                        }
                     }
+                    HorizontalDivider(color = MorrowBorder.copy(alpha = 0.65f), thickness = 0.7.dp)
                 }
             }
         }
+    }
+
+    val pendingDelete = chats.firstOrNull { it.id == deletePendingId }
+    if (pendingDelete != null) {
+        AlertDialog(
+            onDismissRequest = { deletePendingId = null },
+            containerColor = MorrowSurface,
+            title = { Text("Delete chat?", color = MorrowText) },
+            text = { Text("Delete \"${pendingDelete.title}\" from this device? This can't be undone.", color = MorrowMuted) },
+            confirmButton = {
+                TextButton(onClick = { onDeleteChat(pendingDelete.id); deletePendingId = null }) {
+                    Text("Delete", color = Color(0xFFF87171))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletePendingId = null }) { Text("Cancel", color = MorrowMuted) }
+            }
+        )
     }
 }
 
@@ -3008,7 +3138,8 @@ private fun MorrowComposer(
     onCamera: () -> Unit,
     onRemoveAttachment: (Int) -> Unit,
     onSend: () -> Unit,
-    onStop: () -> Unit
+    onStop: () -> Unit,
+    onUnsupportedTool: () -> Unit
 ) {
     val accent = LocalMorrowAccent.current
     var focused by remember { mutableStateOf(false) }
@@ -3062,11 +3193,13 @@ private fun MorrowComposer(
                     onToggleAttachments()
                     voice.toggle()
                 },
-                onUnsupportedTool = onToggleAttachments,
-                onMore = onToggleAttachments,
-                onQuickTool = { prompt ->
-                    onTextChanged(prompt)
+                onUnsupportedTool = {
                     onToggleAttachments()
+                    onUnsupportedTool()
+                },
+                onMore = {
+                    onToggleAttachments()
+                    onUnsupportedTool()
                 }
             )
         }
