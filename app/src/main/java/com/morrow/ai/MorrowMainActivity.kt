@@ -1636,7 +1636,7 @@ private fun MorrowSignatureOrb(modifier: Modifier = Modifier) {
         label = "orbFloat"
     )
     val density = LocalDensity.current
-    val bobPx = with(density) { (floatMotion * 4.dp).toPx() }
+    val bobPx = with(density) { floatMotion * 4.dp.toPx() }
     val particles = remember {
         List(20) { index ->
             OrbParticle(
