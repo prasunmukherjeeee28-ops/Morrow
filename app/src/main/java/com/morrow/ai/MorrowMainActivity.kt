@@ -1518,61 +1518,79 @@ private fun LibraryScreen(
     onOpenChat: (String) -> Unit
 ) {
     val accent = LocalMorrowAccent.current
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MorrowBackground)
-    ) {
+    var query by remember { mutableStateOf("") }
+    val visibleChats = chats.filter { it.title.contains(query.trim(), ignoreCase = true) }
+    Column(modifier = Modifier.fillMaxSize().background(MorrowBackground)) {
         Row(
-            modifier = Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(horizontal = 8.dp),
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().height(60.dp).padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) { BackIcon(tint = accent) }
             Column {
                 Text("Chat history", color = MorrowText, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                Text("Pick up where you left off", color = MorrowMuted, fontSize = 11.sp)
+                Text("${chats.size} saved conversations", color = MorrowMuted, fontSize = 11.sp)
             }
         }
-        if (chats.isEmpty()) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            singleLine = true,
+            leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, tint = MorrowMuted) },
+            placeholder = { Text("Search chats...", color = MorrowMuted, fontSize = 13.sp) },
+            shape = RoundedCornerShape(16.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = accent,
+                unfocusedBorderColor = MorrowBorder,
+                focusedContainerColor = Color(0xFF101321),
+                unfocusedContainerColor = Color(0xFF101321),
+                focusedTextColor = MorrowText,
+                unfocusedTextColor = MorrowText,
+                cursorColor = accent
+            )
+        )
+        if (visibleChats.isEmpty()) {
             Column(
-                modifier = Modifier.fillMaxSize().padding(28.dp),
+                modifier = Modifier.fillMaxSize().padding(horizontal = 28.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Icon(Icons.Outlined.BookmarkBorder, contentDescription = null, tint = accent, modifier = Modifier.size(42.dp))
+                Icon(if (query.isBlank()) Icons.Outlined.History else Icons.Outlined.SearchOff, contentDescription = null, tint = accent, modifier = Modifier.size(42.dp))
                 Spacer(Modifier.height(14.dp))
-                Text("Your conversations appear here", color = MorrowText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Text(if (query.isBlank()) "No conversations yet" else "No matching chats", color = MorrowText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Start a conversation and it will be saved here on your device. Long-press a chat in the sidebar for more actions.",
-                    color = MorrowMuted,
-                    fontSize = 13.sp,
-                    textAlign = TextAlign.Center,
-                    lineHeight = 19.sp
+                    if (query.isBlank()) "Start a chat with Morrow and it will show up here automatically." else "Try a different word or phrase.",
+                    color = MorrowMuted, fontSize = 13.sp, textAlign = TextAlign.Center, lineHeight = 19.sp
                 )
             }
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(9.dp)
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
-                items(chats, key = { it.id }) { chat ->
+                items(visibleChats, key = { it.id }) { chat ->
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(15.dp))
-                            .background(MorrowSurface)
-                            .border(1.dp, MorrowBorder, RoundedCornerShape(15.dp))
-                            .clickable { onOpenChat(chat.id) }
-                            .padding(15.dp),
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp))
+                            .clickable { onOpenChat(chat.id) }.padding(horizontal = 10.dp, vertical = 13.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Outlined.BookmarkBorder, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(12.dp))
-                        Text(chat.title, color = MorrowText, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                        Box(
+                            modifier = Modifier.size(38.dp).clip(RoundedCornerShape(12.dp))
+                                .background(Brush.linearGradient(listOf(Color(0xFF2A2340), Color(0xFF171927)))),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(if (chat.pinned) Icons.Outlined.Bookmark else Icons.Outlined.ChatBubbleOutline, contentDescription = null, tint = accent, modifier = Modifier.size(18.dp))
+                        }
+                        Spacer(Modifier.width(11.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(chat.title, color = MorrowText, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+                            Text(relativeChatTime(chat.id, emptyList()), color = MorrowMuted, fontSize = 10.sp)
+                        }
                         Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MorrowMuted, modifier = Modifier.size(18.dp))
                     }
+                    HorizontalDivider(color = MorrowBorder.copy(alpha = 0.7f), modifier = Modifier.padding(start = 59.dp))
                 }
             }
         }
