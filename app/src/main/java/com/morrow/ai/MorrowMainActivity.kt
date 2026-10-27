@@ -61,6 +61,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -605,7 +606,8 @@ private fun MorrowMainScreen() {
 
     var showHome by remember { mutableStateOf(true) }
     var showChats by remember { mutableStateOf(false) }
-    var showModelsDialog by remember { mutableStateOf(false) }
+    var showTools by remember { mutableStateOf(false) }
+    var showToolInfoDialog by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showExplore by remember { mutableStateOf(false) }
     var showLibrary by remember { mutableStateOf(false) }
@@ -675,6 +677,7 @@ private fun MorrowMainScreen() {
     fun createNewChat(temporary: Boolean = false) {
         showHome = false
         showChats = false
+        showTools = false
         showSettings = false
         showExplore = false
         showLibrary = false
@@ -701,6 +704,7 @@ private fun MorrowMainScreen() {
             "Home" -> {
                 showHome = true
                 showChats = false
+                showTools = false
                 showExplore = false
                 showLibrary = false
                 showSettings = false
@@ -708,21 +712,23 @@ private fun MorrowMainScreen() {
             "Chats" -> {
                 showHome = false
                 showChats = true
+                showTools = false
                 showExplore = false
                 showLibrary = false
                 showSettings = false
             }
-            "Models" -> showModelsDialog = true
             "Tools" -> {
                 showHome = false
                 showChats = false
-                showExplore = true
+                showTools = true
+                showExplore = false
                 showLibrary = false
                 showSettings = false
             }
             "Settings" -> {
                 showHome = false
                 showChats = false
+                showTools = false
                 showExplore = false
                 showLibrary = false
                 showSettings = true
@@ -767,6 +773,7 @@ private fun MorrowMainScreen() {
     fun sendPrompt(prompt: String, attachments: List<MorrowAttachment>) {
         showHome = false
         showChats = false
+        showTools = false
         val targetChatId = activeId
         if ((prompt.isBlank() && attachments.isEmpty()) || targetChatId in loadingConversationIds) return
 
@@ -972,10 +979,11 @@ private fun MorrowMainScreen() {
                         SidebarAction(
                             icon = { ChatIcon(tint = if (!showHome && !showExplore && !showLibrary && !showSettings && !showChats) accent else MorrowMuted) },
                             label = "Chat",
-                            selected = !showHome && !showChats && !showExplore && !showLibrary && !showSettings
+                            selected = !showHome && !showChats && !showTools && !showExplore && !showLibrary && !showSettings
                         ) {
                             showHome = false
                             showChats = false
+                            showTools = false
                             showExplore = false
                             showLibrary = false
                             showSettings = false
@@ -989,6 +997,7 @@ private fun MorrowMainScreen() {
                         ) {
                             showHome = false
                             showChats = false
+                            showTools = false
                             showExplore = true
                             showLibrary = false
                             showSettings = false
@@ -1002,6 +1011,7 @@ private fun MorrowMainScreen() {
                         ) {
                             showHome = false
                             showChats = false
+                            showTools = false
                             showLibrary = true
                             showExplore = false
                             showSettings = false
@@ -1015,6 +1025,7 @@ private fun MorrowMainScreen() {
                         ) {
                             showHome = false
                             showChats = false
+                            showTools = false
                             showSettings = true
                             showExplore = false
                             showLibrary = false
@@ -1176,6 +1187,31 @@ private fun MorrowMainScreen() {
                     onClearChats = { showClearDialog = true },
                     onBack = { showSettings = false }
                 )
+            } else if (showTools) {
+                ToolsScreen(
+                    onBack = { navigateHomeTab("Home") },
+                    onPhotos = {
+                        navigateHomeTab("Home")
+                        createNewChat()
+                        photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    },
+                    onFiles = {
+                        navigateHomeTab("Home")
+                        createNewChat()
+                        filePicker.launch(arrayOf("*/*"))
+                    },
+                    onCamera = {
+                        navigateHomeTab("Home")
+                        createNewChat()
+                        openCamera()
+                    },
+                    onVoice = {
+                        navigateHomeTab("Home")
+                        createNewChat()
+                        voice.toggle()
+                    },
+                    onUnsupportedTool = { showToolInfoDialog = true }
+                )
             } else if (showExplore) {
                 ExploreScreen(
                     onBack = { showExplore = false },
@@ -1206,6 +1242,24 @@ private fun MorrowMainScreen() {
                     chats = conversations.filterNot { it.temporary }.sortedByDescending { it.id.toLongOrNull() ?: 0L },
                     messagesByConversation = messagesByConversation,
                     onBackHome = { navigateHomeTab("Home") },
+                    onRenameChat = { chatId ->
+                        conversations.firstOrNull { it.id == chatId }?.let { chat ->
+                            renameChatId = chat.id
+                            renameChatValue = chat.title
+                        }
+                    },
+                    onTogglePin = { chatId ->
+                        val index = conversations.indexOfFirst { it.id == chatId }
+                        if (index >= 0) conversations[index] = conversations[index].copy(pinned = !conversations[index].pinned)
+                    },
+                    onDeleteChat = { chatId ->
+                        conversations.removeAll { it.id == chatId }
+                        messagesByConversation.remove(chatId)
+                        if (activeId == chatId) {
+                            val next = conversations.firstOrNull()
+                            if (next != null) activeId = next.id else createNewChat()
+                        }
+                    },
                     onOpenChat = { chatId ->
                         activeId = chatId
                         input = ""
@@ -1400,19 +1454,19 @@ private fun MorrowMainScreen() {
             )
         }
 
-        if (showModelsDialog) {
+        if (showToolInfoDialog) {
             AlertDialog(
-                onDismissRequest = { showModelsDialog = false },
+                onDismissRequest = { showToolInfoDialog = false },
                 containerColor = MorrowSurface,
-                title = { Text("Models", color = MorrowText) },
+                title = { Text("Tool availability", color = MorrowText) },
                 text = {
                     Text(
-                        "Morrow currently uses the model configured by its backend. A selectable model list is not available yet.",
+                        "Photos, camera, files, and voice input use features already built into Morrow. Live web search, image generation, and code execution need backend support that is not connected yet.",
                         color = MorrowMuted
                     )
                 },
                 confirmButton = {
-                    TextButton(onClick = { showModelsDialog = false }) { Text("Got it", color = LocalMorrowAccent.current) }
+                    TextButton(onClick = { showToolInfoDialog = false }) { Text("Got it", color = LocalMorrowAccent.current) }
                 }
             )
         }
@@ -1868,8 +1922,6 @@ private fun HomeBottomNavigation(onTabSelected: (String) -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         HomeNavItem("Home", Icons.Outlined.Home, selected = true, modifier = Modifier.weight(1f), onClick = onTabSelected)
-        HomeNavItem("Chats", Icons.Outlined.Forum, selected = false, modifier = Modifier.weight(1f), onClick = onTabSelected)
-        HomeNavItem("Models", Icons.Outlined.Hub, selected = false, modifier = Modifier.weight(1f), onClick = onTabSelected)
         HomeNavItem("Tools", Icons.Outlined.Widgets, selected = false, modifier = Modifier.weight(1f), onClick = onTabSelected)
         HomeNavItem("Settings", Icons.Outlined.Settings, selected = false, modifier = Modifier.weight(1f), onClick = onTabSelected)
     }
@@ -3005,7 +3057,17 @@ private fun MorrowComposer(
             AttachmentPanel(
                 onPhotos = onPickPhotos,
                 onFiles = onPickFiles,
-                onCamera = onCamera
+                onCamera = onCamera,
+                onVoice = {
+                    onToggleAttachments()
+                    voice.toggle()
+                },
+                onUnsupportedTool = onToggleAttachments,
+                onMore = onToggleAttachments,
+                onQuickTool = { prompt ->
+                    onTextChanged(prompt)
+                    onToggleAttachments()
+                }
             )
         }
 
