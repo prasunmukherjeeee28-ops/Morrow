@@ -1161,6 +1161,7 @@ private fun MorrowMainScreen() {
                                 palette = palette,
                                 animate = landscapeOn,
                                 recentChats = conversations.filter { !it.temporary && messagesByConversation[it.id].orEmpty().isNotEmpty() }.take(3),
+                                onOpenHistory = { showLibrary = true },
                                 onOpenChat = { chatId ->
                                     activeId = chatId
                                     input = ""
@@ -1604,6 +1605,7 @@ private fun WelcomeHero(
     animate: Boolean,
     recentChats: List<MorrowConversationSession>,
     onOpenChat: (String) -> Unit,
+    onOpenHistory: () -> Unit,
     onPromptClick: (String) -> Unit
 ) {
     val accent = LocalMorrowAccent.current
@@ -1647,7 +1649,7 @@ private fun WelcomeHero(
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                     Text("RECENT CHATS", color = MorrowMuted, fontSize = 10.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.weight(1f))
-                    Text("See all below", color = accent, fontSize = 10.sp)
+                    Text("Open history", color = accent, fontSize = 10.sp, modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onOpenHistory).padding(horizontal = 4.dp, vertical = 3.dp))
                 }
                 Spacer(Modifier.height(8.dp))
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(17.dp)).background(Color(0xFF12121B)).border(1.dp, MorrowBorder, RoundedCornerShape(17.dp))) {
