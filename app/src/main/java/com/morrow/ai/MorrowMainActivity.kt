@@ -20,6 +20,9 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Base64
 import android.widget.Toast
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -44,6 +47,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -74,11 +78,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
@@ -741,11 +749,17 @@ private fun MorrowMainScreen() {
         takeLastUserMessage()?.let { sendPrompt(it.text, it.attachments) }
     }
 
-    fun editLast() {
-        takeLastUserMessage()?.let {
-            input = it.text
-            pendingAttachments = it.attachments
-        }
+    fun editMessage(message: MorrowChatMessage) {
+        val chatId = activeId
+        if (chatId in loadingConversationIds || message.sender != MorrowSender.USER) return
+        val messages = messagesByConversation[chatId].orEmpty()
+        val index = messages.indexOfFirst { it.id == message.id }
+        if (index < 0) return
+        messagesByConversation[chatId] = messages.take(index)
+        input = message.text
+        pendingAttachments = message.attachments
+        typingMessageId = null
+        typingSkip = false
     }
 
     /**
@@ -1010,7 +1024,7 @@ private fun MorrowMainScreen() {
                                     onSpeak = { toggleSpeak(it) },
                                     onFeedback = { message, value -> setFeedback(message, value) },
                                     onRegenerate = { regenerateLast() },
-                                    onEdit = { editLast() },
+                                    onEdit = { message -> editMessage(message) },
                                     onTypingDone = { onTypingDone() }
                                 )
                             }
@@ -1417,7 +1431,7 @@ private fun MessageList(
     onSpeak: (MorrowChatMessage) -> Unit,
     onFeedback: (MorrowChatMessage, Int) -> Unit,
     onRegenerate: () -> Unit,
-    onEdit: () -> Unit,
+    onEdit: (MorrowChatMessage) -> Unit,
     onTypingDone: () -> Unit
 ) {
     val lastUserIndex = messages.indexOfLast { it.sender == MorrowSender.USER }
@@ -1442,7 +1456,7 @@ private fun MessageList(
                 onSpeak = { onSpeak(chatMessage) },
                 onFeedback = { onFeedback(chatMessage, it) },
                 onRegenerate = onRegenerate,
-                onEdit = onEdit,
+                onEdit = { onEdit(chatMessage) },
                 onTypingDone = onTypingDone
             )
         }
@@ -1467,10 +1481,17 @@ private fun MorrowMessageRow(
     onSpeak: () -> Unit,
     onFeedback: (Int) -> Unit,
     onRegenerate: () -> Unit,
-    onEdit: () -> Unit,
+    onEdit: (MorrowChatMessage) -> Unit,
     onTypingDone: () -> Unit
 ) {
     val accent = LocalMorrowAccent.current
+    var showUserMessageMenu by remember(message.id) { mutableStateOf(false) }
+    var selectingText by remember(message.id) { mutableStateOf(false) }
+    val sentAt = remember(message.id) {
+        message.id.substringAfterLast("_").toLongOrNull()?.let { timestamp ->
+            SimpleDateFormat("MMM d, yyyy • h:mm a", Locale.getDefault()).format(Date(timestamp))
+        } ?: "Time unavailable"
+    }
 
     val entrance = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
@@ -1509,14 +1530,42 @@ private fun MorrowMessageRow(
                                     colors = listOf(accent, lerp(accent, Color.Black, 0.45f))
                                 )
                             )
+                            .combinedClickable(onClick = {}, onLongClick = { showUserMessageMenu = true })
                             .padding(horizontal = 16.dp, vertical = 12.dp)
                     ) {
-                        Text(message.text, color = Color.White, fontSize = 15.sp, lineHeight = 23.sp)
+                        if (selectingText) SelectionContainer { Text(message.text, color = Color.White, fontSize = 15.sp, lineHeight = 23.sp) }
+                        else Text(message.text, color = Color.White, fontSize = 15.sp, lineHeight = 23.sp)
                     }
                 }
                 if (canEdit) {
                     Spacer(Modifier.height(6.dp))
-                    MessageAction(label = "Edit", onClick = onEdit)
+                    MessageAction(label = "Edit", onClick = { onEdit(message) })
+                }
+                if (showUserMessageMenu) {
+                    AlertDialog(
+                        onDismissRequest = { showUserMessageMenu = false },
+                        title = { Text("Your message", color = MorrowText) },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("Sent $sentAt", color = MorrowMuted, fontSize = 12.sp)
+                                Spacer(Modifier.height(6.dp))
+                                TextButton(onClick = { onCopy(); showUserMessageMenu = false }, modifier = Modifier.fillMaxWidth()) {
+                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { CopyIcon(Modifier.size(18.dp), MorrowText); Spacer(Modifier.width(12.dp)); Text("Copy message", color = MorrowText) }
+                                }
+                                TextButton(onClick = { selectingText = true; showUserMessageMenu = false }, modifier = Modifier.fillMaxWidth()) {
+                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { ComposeIcon(Modifier.size(18.dp), MorrowText); Spacer(Modifier.width(12.dp)); Text("Select text", color = MorrowText) }
+                                }
+                                TextButton(onClick = { showUserMessageMenu = false; onEdit(message) }, modifier = Modifier.fillMaxWidth()) {
+                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { ComposeIcon(Modifier.size(18.dp), MorrowText); Spacer(Modifier.width(12.dp)); Text("Edit message", color = MorrowText) }
+                                }
+                                TextButton(onClick = { onShare(); showUserMessageMenu = false }, modifier = Modifier.fillMaxWidth()) {
+                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { ShareIcon(Modifier.size(18.dp), MorrowText); Spacer(Modifier.width(12.dp)); Text("Share prompt", color = MorrowText) }
+                                }
+                            }
+                        },
+                        confirmButton = { TextButton(onClick = { showUserMessageMenu = false }) { Text("Done", color = LocalMorrowAccent.current) } },
+                        containerColor = MorrowSurface
+                    )
                 }
             }
         } else {
@@ -1532,25 +1581,9 @@ private fun MorrowMessageRow(
                         letterSpacing = 0.5.sp
                     )
                 }
-                Spacer(Modifier.height(8.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(MorrowSurface.copy(alpha = 0.62f))
-                        .border(1.dp, MorrowBorder.copy(alpha = 0.8f), RoundedCornerShape(18.dp))
-                        .padding(horizontal = 16.dp, vertical = 14.dp)
-                ) {
-                    if (isTyping) {
-                        TypewriterMarkdown(
-                            text = message.text,
-                            skipRequested = typingSkip,
-                            onFinished = onTypingDone
-                        )
-                    } else {
-                        MorrowMarkdown(text = message.text)
-                    }
-                }
+                Spacer(Modifier.height(4.dp))
+                if (isTyping) TypewriterMarkdown(text = message.text, skipRequested = typingSkip, onFinished = onTypingDone)
+                else SelectionContainer { MorrowMarkdown(text = message.text) }
                 if (!isTyping) {
                     MessageActionRow(
                         message = message,
@@ -2888,347 +2921,95 @@ private fun DrawScope.fracPolyline(color: Color, stroke: Stroke, vararg points: 
 
 @Composable
 private fun MenuIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
-    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
-        fracLine(color, stroke, 0.18f, 0.32f, 0.82f, 0.32f)
-        fracLine(color, stroke, 0.18f, 0.5f, 0.82f, 0.5f)
-        fracLine(color, stroke, 0.18f, 0.68f, 0.82f, 0.68f)
-    }
+    Icon(imageVector = Icons.Outlined.Menu, contentDescription = null, modifier = modifier, tint = tint)
 }
 
 @Composable
 private fun BackIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
-    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
-        fracPolyline(color, stroke, 0.62f to 0.22f, 0.32f to 0.5f, 0.62f to 0.78f)
-    }
+    Icon(imageVector = Icons.Outlined.ArrowBack, contentDescription = null, modifier = modifier, tint = tint)
 }
 
 @Composable
 private fun CloseIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
-    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
-        fracLine(color, stroke, 0.25f, 0.25f, 0.75f, 0.75f)
-        fracLine(color, stroke, 0.75f, 0.25f, 0.25f, 0.75f)
-    }
+    Icon(imageVector = Icons.Outlined.Close, contentDescription = null, modifier = modifier, tint = tint)
 }
 
 @Composable
 private fun ComposeIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
-    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
-        drawRoundRect(
-            color = color,
-            topLeft = Offset(size.width * 0.14f, size.height * 0.2f),
-            size = Size(size.width * 0.7f, size.height * 0.66f),
-            cornerRadius = CornerRadius(size.minDimension * 0.16f),
-            style = stroke
-        )
-        fracLine(color, stroke, 0.38f, 0.62f, 0.7f, 0.3f)
-    }
+    Icon(imageVector = Icons.Outlined.Edit, contentDescription = null, modifier = modifier, tint = tint)
 }
 
 @Composable
 private fun PlusIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
-    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
-        fracLine(color, stroke, 0.5f, 0.18f, 0.5f, 0.82f)
-        fracLine(color, stroke, 0.18f, 0.5f, 0.82f, 0.5f)
-    }
+    Icon(imageVector = Icons.Outlined.Add, contentDescription = null, modifier = modifier, tint = tint)
 }
 
 @Composable
 private fun SearchIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
-    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
-        drawCircle(
-            color = color,
-            radius = size.minDimension * 0.27f,
-            center = Offset(size.width * 0.44f, size.height * 0.44f),
-            style = stroke
-        )
-        fracLine(color, stroke, 0.64f, 0.64f, 0.84f, 0.84f)
-    }
+    Icon(imageVector = Icons.Outlined.Search, contentDescription = null, modifier = modifier, tint = tint)
 }
 
 @Composable
 private fun SliderIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
-    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
-        val knob = size.minDimension * 0.1f
-        fracLine(color, stroke, 0.18f, 0.28f, 0.82f, 0.28f)
-        fracLine(color, stroke, 0.18f, 0.5f, 0.82f, 0.5f)
-        fracLine(color, stroke, 0.18f, 0.72f, 0.82f, 0.72f)
-        drawCircle(color, radius = knob, center = Offset(size.width * 0.66f, size.height * 0.28f))
-        drawCircle(color, radius = knob, center = Offset(size.width * 0.34f, size.height * 0.5f))
-        drawCircle(color, radius = knob, center = Offset(size.width * 0.6f, size.height * 0.72f))
-    }
+    Icon(imageVector = Icons.Outlined.Tune, contentDescription = null, modifier = modifier, tint = tint)
 }
 
 @Composable
 private fun ChatIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
-    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
-        drawRoundRect(
-            color = color,
-            topLeft = Offset(size.width * 0.14f, size.height * 0.2f),
-            size = Size(size.width * 0.72f, size.height * 0.5f),
-            cornerRadius = CornerRadius(size.minDimension * 0.16f),
-            style = stroke
-        )
-        fracPolyline(color, stroke, 0.36f to 0.7f, 0.3f to 0.86f, 0.52f to 0.7f)
-    }
+    Icon(imageVector = Icons.Outlined.ChatBubbleOutline, contentDescription = null, modifier = modifier, tint = tint)
 }
 
 @Composable
 private fun MicIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
-    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
-        drawRoundRect(
-            color = color,
-            topLeft = Offset(size.width * 0.36f, size.height * 0.12f),
-            size = Size(size.width * 0.28f, size.height * 0.46f),
-            cornerRadius = CornerRadius(size.width * 0.14f),
-            style = stroke
-        )
-        drawArc(
-            color = color,
-            startAngle = 0f,
-            sweepAngle = 180f,
-            useCenter = false,
-            topLeft = Offset(size.width * 0.22f, size.height * 0.3f),
-            size = Size(size.width * 0.56f, size.height * 0.46f),
-            style = stroke
-        )
-        fracLine(color, stroke, 0.5f, 0.76f, 0.5f, 0.9f)
-    }
+    Icon(imageVector = Icons.Outlined.MicNone, contentDescription = null, modifier = modifier, tint = tint)
 }
 
 @Composable
 private fun ArrowUpIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
-    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
-        fracLine(color, stroke, 0.5f, 0.84f, 0.5f, 0.18f)
-        fracPolyline(color, stroke, 0.26f to 0.43f, 0.5f to 0.18f, 0.74f to 0.43f)
-    }
+    Icon(imageVector = Icons.Outlined.ArrowUpward, contentDescription = null, modifier = modifier, tint = tint)
 }
 
 @Composable
 private fun StopSquareIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
-    MorrowIcon(modifier = modifier, tint = tint) { color, _ ->
-        drawRoundRect(
-            color = color,
-            topLeft = Offset(size.width * 0.2f, size.height * 0.2f),
-            size = Size(size.width * 0.6f, size.height * 0.6f),
-            cornerRadius = CornerRadius(size.minDimension * 0.12f)
-        )
-    }
+    Icon(imageVector = Icons.Outlined.Stop, contentDescription = null, modifier = modifier, tint = tint)
 }
 
 @Composable
 private fun CopyIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
-    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
-        drawRoundRect(
-            color = color,
-            topLeft = Offset(size.width * 0.36f, size.height * 0.12f),
-            size = Size(size.width * 0.52f, size.height * 0.52f),
-            cornerRadius = CornerRadius(size.minDimension * 0.12f),
-            style = stroke
-        )
-        drawRoundRect(
-            color = color,
-            topLeft = Offset(size.width * 0.12f, size.height * 0.36f),
-            size = Size(size.width * 0.52f, size.height * 0.52f),
-            cornerRadius = CornerRadius(size.minDimension * 0.12f),
-            style = stroke
-        )
-    }
+    Icon(imageVector = Icons.Outlined.ContentCopy, contentDescription = null, modifier = modifier, tint = tint)
 }
 
 @Composable
 private fun ShareIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
-    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
-        fracLine(color, stroke, 0.5f, 0.14f, 0.5f, 0.62f)
-        fracPolyline(color, stroke, 0.32f to 0.3f, 0.5f to 0.12f, 0.68f to 0.3f)
-        fracPolyline(color, stroke, 0.22f to 0.46f, 0.22f to 0.88f, 0.78f to 0.88f, 0.78f to 0.46f)
-    }
+    Icon(imageVector = Icons.Outlined.Share, contentDescription = null, modifier = modifier, tint = tint)
 }
 
 @Composable
 private fun SpeakIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
-    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
-        fracPolyline(
-            color, stroke,
-            0.3f to 0.18f, 0.8f to 0.5f, 0.3f to 0.82f, 0.3f to 0.18f
-        )
-    }
+    Icon(imageVector = Icons.Outlined.VolumeUp, contentDescription = null, modifier = modifier, tint = tint)
 }
 
 @Composable
 private fun ThumbIcon(down: Boolean, modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
-    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
-        fun fy(y: Float): Float = if (down) 1f - y else y
-        val w = size.width
-        val h = size.height
-        val body = Path().apply {
-            moveTo(w * 0.28f, h * fy(0.46f))
-            lineTo(w * 0.44f, h * fy(0.14f))
-            quadraticBezierTo(w * 0.48f, h * fy(0.06f), w * 0.56f, h * fy(0.12f))
-            lineTo(w * 0.52f, h * fy(0.40f))
-            lineTo(w * 0.84f, h * fy(0.40f))
-            quadraticBezierTo(w * 0.92f, h * fy(0.42f), w * 0.90f, h * fy(0.52f))
-            lineTo(w * 0.82f, h * fy(0.82f))
-            quadraticBezierTo(w * 0.79f, h * fy(0.92f), w * 0.68f, h * fy(0.92f))
-            lineTo(w * 0.28f, h * fy(0.92f))
-            close()
-        }
-        drawPath(path = body, color = color, style = stroke)
-        val top = minOf(fy(0.46f), fy(0.92f))
-        val bottom = maxOf(fy(0.46f), fy(0.92f))
-        drawRoundRect(
-            color = color,
-            topLeft = Offset(w * 0.10f, h * top),
-            size = Size(w * 0.18f, h * (bottom - top)),
-            cornerRadius = CornerRadius(w * 0.04f),
-            style = stroke
-        )
-    }
+    Icon(imageVector = if (down) Icons.Outlined.ThumbDownOffAlt else Icons.Outlined.ThumbUpOffAlt, contentDescription = if (down) "Dislike" else "Like", modifier = modifier, tint = tint)
 }
 
 @Composable
 private fun RefreshIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
-    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
-        drawArc(
-            color = color,
-            startAngle = -60f,
-            sweepAngle = 290f,
-            useCenter = false,
-            topLeft = Offset(size.width * 0.14f, size.height * 0.14f),
-            size = Size(size.width * 0.72f, size.height * 0.72f),
-            style = stroke
-        )
-        fracPolyline(color, stroke, 0.8f to 0.1f, 0.8f to 0.36f, 0.54f to 0.36f)
-    }
+    Icon(imageVector = Icons.Outlined.Refresh, contentDescription = null, modifier = modifier, tint = tint)
 }
 
 @Composable
 private fun PhotoIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
-    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
-        drawRoundRect(
-            color = color,
-            topLeft = Offset(size.width * 0.12f, size.height * 0.18f),
-            size = Size(size.width * 0.76f, size.height * 0.64f),
-            cornerRadius = CornerRadius(size.minDimension * 0.12f),
-            style = stroke
-        )
-        drawCircle(
-            color = color,
-            radius = size.width * 0.07f,
-            center = Offset(size.width * 0.66f, size.height * 0.36f),
-            style = stroke
-        )
-        fracPolyline(
-            color, stroke,
-            0.18f to 0.7f, 0.42f to 0.46f, 0.56f to 0.6f, 0.66f to 0.5f, 0.84f to 0.7f
-        )
-    }
+    Icon(imageVector = Icons.Outlined.Image, contentDescription = null, modifier = modifier, tint = tint)
 }
 
 @Composable
 private fun FileIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
-    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
-        fracPolyline(
-            color, stroke,
-            0.26f to 0.12f, 0.58f to 0.12f, 0.8f to 0.34f, 0.8f to 0.88f, 0.26f to 0.88f, 0.26f to 0.12f
-        )
-        fracPolyline(color, stroke, 0.58f to 0.12f, 0.58f to 0.34f, 0.8f to 0.34f)
-    }
+    Icon(imageVector = Icons.Outlined.InsertDriveFile, contentDescription = null, modifier = modifier, tint = tint)
 }
 
 @Composable
 private fun CameraIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
-    MorrowIcon(modifier = modifier, tint = tint) { color, stroke ->
-        drawRoundRect(
-            color = color,
-            topLeft = Offset(size.width * 0.12f, size.height * 0.3f),
-            size = Size(size.width * 0.76f, size.height * 0.5f),
-            cornerRadius = CornerRadius(size.minDimension * 0.1f),
-            style = stroke
-        )
-        fracPolyline(color, stroke, 0.34f to 0.3f, 0.4f to 0.2f, 0.6f to 0.2f, 0.66f to 0.3f)
-        drawCircle(
-            color = color,
-            radius = size.width * 0.14f,
-            center = Offset(size.width * 0.5f, size.height * 0.55f),
-            style = stroke
-        )
-    }
-}
-
-// ---------- Helpers ----------
-
-private fun morrowGreeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
-    in 5..11 -> "Good morning"
-    in 12..16 -> "Good afternoon"
-    in 17..21 -> "Good evening"
-    else -> "Good night"
-}
-
-// ---------- Networking ----------
-
-/**
- * Sends the prompt and any attachments to the Worker.
- * The JSON adds an "attachments" array when files are included. The Worker must forward
- * images and text to the model for the model to see them.
- */
-private suspend fun fetchMorrowReply(
-    message: String,
-    attachments: List<MorrowAttachment>
-): String = withContext(Dispatchers.IO) {
-    var connection: HttpURLConnection? = null
-    try {
-        connection = (URL(MORROW_CHAT_ENDPOINT).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 20_000
-            readTimeout = 60_000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            setRequestProperty("Accept", "application/json")
-        }
-
-        val body = JSONObject().put("message", message)
-        if (attachments.isNotEmpty()) {
-            val array = JSONArray()
-            attachments.forEach { a ->
-                val item = JSONObject()
-                    .put("name", a.name)
-                    .put("mime", a.mime)
-                    .put("kind", if (a.isImage) "image" else "file")
-                a.payload?.let { item.put("data", it) }
-                array.put(item)
-            }
-            body.put("attachments", array)
-        }
-
-        connection.outputStream.use { output ->
-            output.write(body.toString().toByteArray(Charsets.UTF_8))
-        }
-
-        val statusCode = connection.responseCode
-        val responseBody = (if (statusCode in 200..299) connection.inputStream else connection.errorStream)
-            ?.bufferedReader(Charsets.UTF_8)
-            ?.use { it.readText() }
-            ?: ""
-
-        val json = try {
-            JSONObject(responseBody)
-        } catch (_: Exception) {
-            JSONObject()
-        }
-
-        if (statusCode !in 200..299) {
-            val detail = json.optString("error").ifBlank { "HTTP $statusCode" }
-            throw IOException(detail)
-        }
-
-        json.optString("reply").takeIf { it.isNotBlank() }
-            ?: throw IOException("The server returned an empty reply.")
-    } catch (error: CancellationException) {
-        // Stop button pressed: let the coroutine cancel instead of showing an error message.
-        throw error
-    } catch (error: Exception) {
-        "I couldn't connect to Morrow right now. ${error.message ?: "Please try again."}"
-    } finally {
-        connection?.disconnect()
-    }
+    Icon(imageVector = Icons.Outlined.PhotoCamera, contentDescription = null, modifier = modifier, tint = tint)
 }
