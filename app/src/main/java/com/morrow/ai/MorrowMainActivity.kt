@@ -177,6 +177,9 @@ import java.util.Calendar
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.text.PDFTextStripper
 import kotlin.random.Random
 
 // ---------- Colors ----------
@@ -218,6 +221,9 @@ private val TwoPi = 2f * PI.toFloat()
 private const val MAX_ATTACHMENTS = 5
 private const val MAX_IMAGE_SIDE = 1024
 private const val MAX_TEXT_BYTES = 200_000
+private const val MAX_PDF_BYTES = 20 * 1024 * 1024
+private val PDFBoxLock = Any()
+@Volatile private var pdfBoxInitialised = false
 
 // ---------- Storage keys ----------
 
@@ -290,7 +296,9 @@ data class MorrowChatMessage(
 
 data class MorrowConversationSession(
     val id: String,
-    val title: String
+    val title: String,
+    val pinned: Boolean = false,
+    val temporary: Boolean = false
 )
 
 private data class SavedState(
@@ -315,8 +323,13 @@ private fun loadChats(context: Context): SavedState {
         val messages = mutableMapOf<String, List<MorrowChatMessage>>()
         for (i in 0 until chats.length()) {
             val chat = chats.getJSONObject(i)
+            if (chat.optBoolean("temporary", false)) continue
             val id = chat.getString("id")
-            conversations += MorrowConversationSession(id, chat.getString("title"))
+            conversations += MorrowConversationSession(
+                id = id,
+                title = chat.getString("title"),
+                pinned = chat.optBoolean("pinned", false)
+            )
             val array = chat.getJSONArray("messages")
             messages[id] = (0 until array.length()).map { j ->
                 val m = array.getJSONObject(j)
@@ -353,8 +366,13 @@ private fun loadChats(context: Context): SavedState {
 }
 
 private fun saveChats(context: Context, state: SavedState) {
+    // Temporary chats are intentionally excluded from on-device persistence.
+    val persistentConversations = state.conversations.filterNot { it.temporary }
+    val conversationsToSave = persistentConversations.ifEmpty {
+        listOf(MorrowConversationSession(WELCOME_ID, "New conversation"))
+    }
     val chats = JSONArray()
-    state.conversations.forEach { conversation ->
+    conversationsToSave.forEach { conversation ->
         val messages = JSONArray()
         state.messages[conversation.id].orEmpty().forEach { m ->
             val attachments = JSONArray()
@@ -379,11 +397,18 @@ private fun saveChats(context: Context, state: SavedState) {
             JSONObject()
                 .put("id", conversation.id)
                 .put("title", conversation.title)
+                .put("pinned", conversation.pinned)
+                .put("temporary", false)
                 .put("messages", messages)
         )
     }
+    val savedActiveId = if (conversationsToSave.any { it.id == state.activeId }) {
+        state.activeId
+    } else {
+        conversationsToSave.first().id
+    }
     val root = JSONObject()
-        .put("active", state.activeId)
+        .put("active", savedActiveId)
         .put("chats", chats)
     context.getSharedPreferences(PREFS_CHATS, Context.MODE_PRIVATE)
         .edit()
@@ -562,7 +587,7 @@ class MainActivity : ComponentActivity() {
 
 // ---------- Main screen ----------
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun MorrowMainScreen() {
     val context = LocalContext.current
@@ -575,7 +600,13 @@ private fun MorrowMainScreen() {
     val accent = MorrowAccentChoices[accentIndex.coerceIn(0, MorrowAccentChoices.lastIndex)]
 
     var showSettings by remember { mutableStateOf(false) }
+    var showExplore by remember { mutableStateOf(false) }
+    var showLibrary by remember { mutableStateOf(false) }
+    var showProDialog by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
+    var chatActionsId by remember { mutableStateOf<String?>(null) }
+    var renameChatId by remember { mutableStateOf<String?>(null) }
+    var renameChatValue by remember { mutableStateOf("") }
     var input by remember { mutableStateOf("") }
     var searchText by remember { mutableStateOf("") }
     var searchVisible by remember { mutableStateOf(false) }
@@ -611,13 +642,16 @@ private fun MorrowMainScreen() {
     val palette = animatedPalette(clock.phase.palette, animate = landscapeOn)
 
     val currentMessages = messagesByConversation[activeId].orEmpty()
+    val activeConversation = conversations.firstOrNull { it.id == activeId }
     val isLoading = activeId in loadingConversationIds
     val isTyping = typingMessageId != null
     val listState = rememberLazyListState()
     val voice = rememberVoiceInput { spoken ->
         input = if (input.isBlank()) spoken else "$input $spoken"
     }
-    val speaker = rememberSpeaker { speakingId = null }
+    val speaker = rememberSpeaker { utteranceId ->
+        if (speakingId == utteranceId) speakingId = null
+    }
 
     // Persist every change to conversations, messages, or the active chat.
     LaunchedEffect(conversations.toList(), messagesByConversation.toMap(), activeId) {
@@ -631,9 +665,16 @@ private fun MorrowMainScreen() {
         }
     }
 
-    fun createNewChat() {
+    fun createNewChat(temporary: Boolean = false) {
         val id = System.currentTimeMillis().toString()
-        conversations.add(0, MorrowConversationSession(id, "New conversation"))
+        conversations.add(
+            0,
+            MorrowConversationSession(
+                id = id,
+                title = if (temporary) "Temporary chat" else "New conversation",
+                temporary = temporary
+            )
+        )
         messagesByConversation[id] = emptyList()
         activeId = id
         input = ""
@@ -853,41 +894,109 @@ private fun MorrowMainScreen() {
                             .padding(16.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            BrandMark(Modifier.size(38.dp))
+                            BrandMark(Modifier.size(44.dp))
                             Spacer(Modifier.width(10.dp))
-                            Column {
-                                Text("morrow", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = MorrowText)
-                                Text("YOUR SPACE TO THINK", fontSize = 9.sp, letterSpacing = 1.2.sp, color = MorrowMuted)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Morrow", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MorrowText)
+                                Text(
+                                    "Better questions. Brighter tomorrows.",
+                                    fontSize = 9.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = MorrowMuted
+                                )
                             }
-                            Spacer(Modifier.weight(1f))
                             IconButton(onClick = { scope.launch { drawerState.close() } }) {
                                 CloseIcon(tint = MorrowMuted)
                             }
                         }
 
-                        Spacer(Modifier.height(24.dp))
-                        SidebarAction(icon = { PlusIcon(tint = accent) }, label = "New chat") {
-                            createNewChat()
+                        Spacer(Modifier.height(22.dp))
+                        SidebarAction(
+                            icon = { ChatIcon(tint = if (!showExplore && !showLibrary && !showSettings) accent else MorrowMuted) },
+                            label = "Chat",
+                            selected = !showExplore && !showLibrary && !showSettings
+                        ) {
+                            showExplore = false
+                            showLibrary = false
+                            showSettings = false
                             scope.launch { drawerState.close() }
                         }
-                        Spacer(Modifier.height(7.dp))
-                        SidebarAction(icon = { SearchIcon(tint = accent) }, label = "Search chats") {
-                            searchVisible = !searchVisible
-                            searchText = ""
+                        Spacer(Modifier.height(6.dp))
+                        SidebarAction(
+                            icon = { Icon(Icons.Outlined.Explore, contentDescription = null, tint = if (showExplore) accent else MorrowMuted, modifier = Modifier.size(22.dp)) },
+                            label = "Explore",
+                            selected = showExplore
+                        ) {
+                            showExplore = true
+                            showLibrary = false
+                            showSettings = false
+                            scope.launch { drawerState.close() }
                         }
-                        Spacer(Modifier.height(7.dp))
-                        SidebarAction(icon = { SliderIcon(tint = accent) }, label = "Settings") {
+                        Spacer(Modifier.height(6.dp))
+                        SidebarAction(
+                            icon = { Icon(Icons.Outlined.BookmarkBorder, contentDescription = null, tint = if (showLibrary) accent else MorrowMuted, modifier = Modifier.size(22.dp)) },
+                            label = "Library",
+                            selected = showLibrary
+                        ) {
+                            showLibrary = true
+                            showExplore = false
+                            showSettings = false
+                            scope.launch { drawerState.close() }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        SidebarAction(
+                            icon = { Icon(Icons.Outlined.Settings, contentDescription = null, tint = if (showSettings) accent else MorrowMuted, modifier = Modifier.size(22.dp)) },
+                            label = "Settings",
+                            selected = showSettings
+                        ) {
                             showSettings = true
+                            showExplore = false
+                            showLibrary = false
+                            scope.launch { drawerState.close() }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        SidebarAction(
+                            icon = { Icon(Icons.Outlined.Timer, contentDescription = null, tint = MorrowMuted, modifier = Modifier.size(22.dp)) },
+                            label = "Temporary chat"
+                        ) {
+                            createNewChat(temporary = true)
+                            showSettings = false
+                            showExplore = false
+                            showLibrary = false
                             scope.launch { drawerState.close() }
                         }
 
+                        HorizontalDivider(color = MorrowBorder, modifier = Modifier.padding(top = 16.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(start = 4.dp, top = 14.dp, bottom = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "RECENT CHATS",
+                                color = MorrowMuted,
+                                fontSize = 10.sp,
+                                letterSpacing = 1.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = {
+                                    searchVisible = !searchVisible
+                                    searchText = ""
+                                },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                SearchIcon(modifier = Modifier.size(18.dp), tint = if (searchVisible) accent else MorrowMuted)
+                            }
+                        }
                         AnimatedVisibility(searchVisible) {
                             OutlinedTextField(
                                 value = searchText,
                                 onValueChange = { searchText = it },
-                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                                 singleLine = true,
-                                placeholder = { Text("Search chat titles", color = MorrowMuted, fontSize = 13.sp) },
+                                placeholder = { Text("Search titles and messages", color = MorrowMuted, fontSize = 12.sp) },
                                 shape = RoundedCornerShape(13.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedBorderColor = accent,
@@ -898,64 +1007,90 @@ private fun MorrowMainScreen() {
                                 )
                             )
                         }
-                        Text(
-                            "RECENT CHATS",
-                            color = MorrowMuted,
-                            fontSize = 10.sp,
-                            letterSpacing = 1.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(start = 4.dp, top = 25.dp, bottom = 10.dp)
-                        )
                         LazyColumn(
                             modifier = Modifier.weight(1f),
                             verticalArrangement = Arrangement.spacedBy(5.dp)
                         ) {
-                            val filteredConversations = conversations.filter {
-                                it.title.contains(searchText, ignoreCase = true)
-                            }
+                            val filteredConversations = conversations
+                                .filterNot { it.temporary }
+                                .filter { chat ->
+                                    searchText.isBlank() ||
+                                        chat.title.contains(searchText, ignoreCase = true) ||
+                                        messagesByConversation[chat.id].orEmpty().any { message ->
+                                            message.text.contains(searchText, ignoreCase = true)
+                                        }
+                                }
+                                .sortedByDescending { it.pinned }
+
                             items(filteredConversations, key = { it.id }) { chat ->
                                 val selected = chat.id == activeId
+                                val chatMessages = messagesByConversation[chat.id].orEmpty()
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(11.dp))
-                                        .background(if (selected) MorrowSelected else Color.Transparent)
-                                        .clickable {
-                                            activeId = chat.id
-                                            input = ""
-                                            pendingAttachments = emptyList()
-                                            attachmentsOpen = false
-                                            typingMessageId = null
-                                            typingSkip = false
-                                            scope.launch { drawerState.close() }
-                                        }
-                                        .padding(horizontal = 11.dp, vertical = 12.dp),
+                                        .clip(RoundedCornerShape(13.dp))
+                                        .background(
+                                            brush = if (selected) {
+                                                Brush.linearGradient(listOf(Color(0xFF30206B), Color(0xFF171D43)))
+                                            } else {
+                                                Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
+                                            },
+                                            shape = RoundedCornerShape(13.dp)
+                                        )
+                                        .border(
+                                            width = if (selected) 1.dp else 0.dp,
+                                            color = if (selected) accent.copy(alpha = 0.8f) else Color.Transparent,
+                                            shape = RoundedCornerShape(13.dp)
+                                        )
+                                        .combinedClickable(
+                                            onClick = {
+                                                activeId = chat.id
+                                                input = ""
+                                                pendingAttachments = emptyList()
+                                                attachmentsOpen = false
+                                                typingMessageId = null
+                                                typingSkip = false
+                                                showSettings = false
+                                                showExplore = false
+                                                showLibrary = false
+                                                scope.launch { drawerState.close() }
+                                            },
+                                            onLongClick = { chatActionsId = chat.id }
+                                        )
+                                        .padding(horizontal = 11.dp, vertical = 9.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     ChatIcon(
-                                        modifier = Modifier.size(18.dp),
+                                        modifier = Modifier.size(20.dp),
                                         tint = if (selected) accent else MorrowMuted
                                     )
                                     Spacer(Modifier.width(10.dp))
-                                    Text(
-                                        chat.title,
-                                        color = if (selected) MorrowText else MorrowMuted,
-                                        fontSize = 13.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            chat.title,
+                                            color = if (selected) MorrowText else MorrowMuted,
+                                            fontSize = 13.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            if (chat.pinned) "Pinned · " + relativeChatTime(chat.id, chatMessages)
+                                            else relativeChatTime(chat.id, chatMessages),
+                                            color = MorrowMuted.copy(alpha = 0.82f),
+                                            fontSize = 10.sp,
+                                            maxLines = 1
+                                        )
+                                    }
+                                    if (chat.pinned) {
+                                        Icon(Icons.Outlined.BookmarkBorder, contentDescription = "Pinned chat", tint = accent, modifier = Modifier.size(15.dp))
+                                    }
                                 }
                             }
                         }
-                        HorizontalDivider(color = MorrowBorder)
-                        Spacer(Modifier.height(12.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(5.dp)) {
-                            BrandMark(Modifier.size(30.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Column {
-                                Text("Morrow AI", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MorrowText)
-                                Text("Connected through Worker", fontSize = 10.sp, color = MorrowMuted)
-                            }
+
+                        SidebarProCard(accent = accent) {
+                            showProDialog = true
+                            scope.launch { drawerState.close() }
                         }
                     }
                 }
@@ -976,6 +1111,30 @@ private fun MorrowMainScreen() {
                     onClearChats = { showClearDialog = true },
                     onBack = { showSettings = false }
                 )
+            } else if (showExplore) {
+                ExploreScreen(
+                    onBack = { showExplore = false },
+                    onPromptClick = { prompt ->
+                        if (currentMessages.isNotEmpty()) createNewChat()
+                        input = prompt
+                        showExplore = false
+                        showLibrary = false
+                        showSettings = false
+                    }
+                )
+            } else if (showLibrary) {
+                LibraryScreen(
+                    chats = conversations.filter { it.pinned && !it.temporary },
+                    onBack = { showLibrary = false },
+                    onOpenChat = { chatId ->
+                        activeId = chatId
+                        input = ""
+                        pendingAttachments = emptyList()
+                        typingMessageId = null
+                        typingSkip = false
+                        showLibrary = false
+                    }
+                )
             } else {
                 Column(
                     modifier = Modifier
@@ -985,7 +1144,8 @@ private fun MorrowMainScreen() {
                 ) {
                     TopBar(
                         onMenuClick = { scope.launch { drawerState.open() } },
-                        onNewChatClick = { createNewChat() }
+                        onNewChatClick = { createNewChat() },
+                        temporary = activeConversation?.temporary == true
                     )
 
                     Crossfade(
@@ -1064,6 +1224,104 @@ private fun MorrowMainScreen() {
             }
         }
 
+        val chatForActions = conversations.firstOrNull { it.id == chatActionsId }
+        if (chatForActions != null) {
+            AlertDialog(
+                onDismissRequest = { chatActionsId = null },
+                containerColor = MorrowSurface,
+                title = { Text(chatForActions.title, color = MorrowText) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        TextButton(
+                            onClick = {
+                                val index = conversations.indexOfFirst { it.id == chatForActions.id }
+                                if (index >= 0) conversations[index] = conversations[index].copy(pinned = !chatForActions.pinned)
+                                chatActionsId = null
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (chatForActions.pinned) "Unpin chat" else "Pin chat", color = MorrowText)
+                        }
+                        TextButton(
+                            onClick = {
+                                renameChatId = chatForActions.id
+                                renameChatValue = chatForActions.title
+                                chatActionsId = null
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Rename chat", color = MorrowText)
+                        }
+                        TextButton(
+                            onClick = {
+                                conversations.removeAll { it.id == chatForActions.id }
+                                messagesByConversation.remove(chatForActions.id)
+                                chatActionsId = null
+                                if (activeId == chatForActions.id) {
+                                    val nextChat = conversations.firstOrNull()
+                                    if (nextChat != null) activeId = nextChat.id else createNewChat()
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Delete chat", color = MorrowDanger)
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { chatActionsId = null }) { Text("Done", color = LocalMorrowAccent.current) }
+                }
+            )
+        }
+
+        if (renameChatId != null) {
+            AlertDialog(
+                onDismissRequest = { renameChatId = null },
+                containerColor = MorrowSurface,
+                title = { Text("Rename chat", color = MorrowText) },
+                text = {
+                    OutlinedTextField(
+                        value = renameChatValue,
+                        onValueChange = { renameChatValue = it },
+                        singleLine = true,
+                        label = { Text("Chat name", color = MorrowMuted) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = LocalMorrowAccent.current,
+                            unfocusedBorderColor = MorrowBorder,
+                            focusedTextColor = MorrowText,
+                            unfocusedTextColor = MorrowText,
+                            cursorColor = LocalMorrowAccent.current
+                        )
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val cleanTitle = renameChatValue.trim()
+                        val index = conversations.indexOfFirst { it.id == renameChatId }
+                        if (cleanTitle.isNotBlank() && index >= 0) {
+                            conversations[index] = conversations[index].copy(title = cleanTitle.take(80))
+                        }
+                        renameChatId = null
+                    }) { Text("Save", color = LocalMorrowAccent.current) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { renameChatId = null }) { Text("Cancel", color = MorrowMuted) }
+                }
+            )
+        }
+
+        if (showProDialog) {
+            AlertDialog(
+                onDismissRequest = { showProDialog = false },
+                containerColor = MorrowSurface,
+                title = { Text("Morrow Pro", color = MorrowText) },
+                text = { Text("Coming soon. The current version of Morrow remains free to use.", color = MorrowMuted) },
+                confirmButton = {
+                    TextButton(onClick = { showProDialog = false }) { Text("Got it", color = LocalMorrowAccent.current) }
+                }
+            )
+        }
+
         if (showClearDialog) {
             AlertDialog(
                 onDismissRequest = { showClearDialog = false },
@@ -1095,7 +1353,11 @@ private fun MorrowMainScreen() {
 }
 
 @Composable
-private fun TopBar(onMenuClick: () -> Unit, onNewChatClick: () -> Unit) {
+private fun TopBar(
+    onMenuClick: () -> Unit,
+    onNewChatClick: () -> Unit,
+    temporary: Boolean = false
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1109,7 +1371,7 @@ private fun TopBar(onMenuClick: () -> Unit, onNewChatClick: () -> Unit) {
         }
         Spacer(Modifier.weight(1f))
         Text(
-            "Morrow",
+            if (temporary) "Temporary chat" else "Morrow",
             color = MorrowText,
             fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
@@ -1118,6 +1380,125 @@ private fun TopBar(onMenuClick: () -> Unit, onNewChatClick: () -> Unit) {
         Spacer(Modifier.weight(1f))
         IconButton(onClick = onNewChatClick) {
             ComposeIcon(tint = MorrowText)
+        }
+    }
+}
+
+@Composable
+private fun ExploreScreen(
+    onBack: () -> Unit,
+    onPromptClick: (String) -> Unit
+) {
+    val accent = LocalMorrowAccent.current
+    val prompts = MarqueeRowOnePrompts + MarqueeRowTwoPrompts + MarqueeRowThreePrompts
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MorrowBackground)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) { BackIcon(tint = accent) }
+            Text("Explore", color = MorrowText, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        }
+        Text(
+            "A starting point for whatever you're thinking about.",
+            color = MorrowMuted,
+            fontSize = 13.sp,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+        )
+        LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp)
+        ) {
+            itemsIndexed(prompts) { _, prompt ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(15.dp))
+                        .background(
+                            Brush.linearGradient(listOf(MorrowSurfaceRaised, MorrowSurface)),
+                            RoundedCornerShape(15.dp)
+                        )
+                        .border(1.dp, MorrowBorder, RoundedCornerShape(15.dp))
+                        .clickable { onPromptClick(prompt) }
+                        .padding(15.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Text(prompt, color = MorrowText, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Icon(Icons.Outlined.ArrowForward, contentDescription = null, tint = MorrowMuted, modifier = Modifier.size(18.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibraryScreen(
+    chats: List<MorrowConversationSession>,
+    onBack: () -> Unit,
+    onOpenChat: (String) -> Unit
+) {
+    val accent = LocalMorrowAccent.current
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MorrowBackground)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) { BackIcon(tint = accent) }
+            Text("Library", color = MorrowText, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        }
+        if (chats.isEmpty()) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(Icons.Outlined.BookmarkBorder, contentDescription = null, tint = accent, modifier = Modifier.size(42.dp))
+                Spacer(Modifier.height(14.dp))
+                Text("Your pinned chats live here", color = MorrowText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Long-press a recent chat in the sidebar to pin it. You can also rename or delete it there.",
+                    color = MorrowMuted,
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 19.sp
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                items(chats, key = { it.id }) { chat ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(15.dp))
+                            .background(MorrowSurface)
+                            .border(1.dp, MorrowBorder, RoundedCornerShape(15.dp))
+                            .clickable { onOpenChat(chat.id) }
+                            .padding(15.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Outlined.BookmarkBorder, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text(chat.title, color = MorrowText, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                        Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MorrowMuted, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
         }
     }
 }
@@ -1432,7 +1813,6 @@ private fun MessageList(
     onEdit: (MorrowChatMessage) -> Unit,
     onTypingDone: () -> Unit
 ) {
-    val lastUserIndex = messages.indexOfLast { it.sender == MorrowSender.USER }
     val lastIndex = messages.lastIndex
 
     LazyColumn(
@@ -1444,7 +1824,6 @@ private fun MessageList(
         itemsIndexed(messages, key = { _, m -> m.id }) { index, chatMessage ->
             MorrowMessageRow(
                 message = chatMessage,
-                canEdit = !isLoading && index == lastUserIndex,
                 canRegenerate = !isLoading && index == lastIndex && chatMessage.sender == MorrowSender.ASSISTANT,
                 isTyping = chatMessage.id == typingMessageId,
                 typingSkip = typingSkip,
@@ -1470,7 +1849,6 @@ private fun MessageList(
 @Composable
 private fun MorrowMessageRow(
     message: MorrowChatMessage,
-    canEdit: Boolean,
     canRegenerate: Boolean,
     isTyping: Boolean,
     typingSkip: Boolean,
@@ -1535,10 +1913,6 @@ private fun MorrowMessageRow(
                         if (selectingText) SelectionContainer { Text(message.text, color = Color.White, fontSize = 15.sp, lineHeight = 23.sp) }
                         else Text(message.text, color = Color.White, fontSize = 15.sp, lineHeight = 23.sp)
                     }
-                }
-                if (canEdit) {
-                    Spacer(Modifier.height(6.dp))
-                    MessageAction(label = "Edit", onClick = { onEdit(message) })
                 }
                 if (showUserMessageMenu) {
                     AlertDialog(
@@ -1624,11 +1998,10 @@ private fun MessageActionRow(
             ShareIcon(modifier = Modifier.size(18.dp), tint = MorrowMuted)
         }
         ActionIcon(onClick = onSpeak) {
-            if (isSpeaking) {
-                StopSquareIcon(modifier = Modifier.size(16.dp), tint = accent)
-            } else {
-                SpeakIcon(modifier = Modifier.size(18.dp), tint = MorrowMuted)
-            }
+            SpeakIcon(
+                modifier = Modifier.size(18.dp),
+                tint = if (isSpeaking) accent else MorrowMuted
+            )
         }
         ActionIcon(onClick = { onFeedback(1) }) {
             ThumbIcon(
@@ -1945,7 +2318,7 @@ private class MorrowSpeaker(private val engine: TextToSpeech) {
 }
 
 @Composable
-private fun rememberSpeaker(onFinished: () -> Unit): MorrowSpeaker? {
+private fun rememberSpeaker(onFinished: (String?) -> Unit): MorrowSpeaker? {
     val context = LocalContext.current
     val currentOnFinished by rememberUpdatedState(onFinished)
     val handler = remember { Handler(Looper.getMainLooper()) }
@@ -1962,10 +2335,10 @@ private fun rememberSpeaker(onFinished: () -> Unit): MorrowSpeaker? {
         engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {}
             override fun onDone(utteranceId: String?) {
-                handler.post { currentOnFinished() }
+                handler.post { currentOnFinished(utteranceId) }
             }
             override fun onError(utteranceId: String?) {
-                handler.post { currentOnFinished() }
+                handler.post { currentOnFinished(utteranceId) }
             }
         })
         speakerState.value = MorrowSpeaker(engine)
@@ -2010,13 +2383,64 @@ private fun scaleToFit(bitmap: Bitmap, maxSide: Int): Bitmap {
 }
 
 /**
+ * Extracts selectable PDF text locally before passing it through the existing /chat request.
+ * PDFs are limited to 20 MB and extracted text is capped to MAX_TEXT_BYTES.
+ */
+private fun extractPdfText(context: Context, uri: Uri): String {
+    val temporaryFile = File.createTempFile("morrow_pdf_", ".pdf", context.cacheDir)
+    try {
+        val input = context.contentResolver.openInputStream(uri)
+            ?: throw IOException("Unable to open PDF")
+        input.use { stream ->
+            temporaryFile.outputStream().use { output ->
+                val buffer = ByteArray(8192)
+                var total = 0L
+                while (true) {
+                    val count = stream.read(buffer)
+                    if (count < 0) break
+                    total += count
+                    if (total > MAX_PDF_BYTES) throw IOException("PDF exceeds 20 MB")
+                    output.write(buffer, 0, count)
+                }
+            }
+        }
+        if (!pdfBoxInitialised) {
+            synchronized(PDFBoxLock) {
+                if (!pdfBoxInitialised) {
+                    PDFBoxResourceLoader.init(context.applicationContext)
+                    pdfBoxInitialised = true
+                }
+            }
+        }
+        return PDDocument.load(temporaryFile).use { document ->
+            PDFTextStripper().getText(document).take(MAX_TEXT_BYTES).ifBlank {
+                "[No selectable text was found. This PDF may be scanned or image-only.]"
+            }
+        }
+    } finally {
+        temporaryFile.delete()
+    }
+}
+
+/**
  * Reads a picked file. Images are shrunk and sent as JPEG base64.
- * Text files are read (up to a limit). Other files only send their name.
+ * Text files are read (up to a limit). PDFs are converted to text locally.
+ * Other files only send their name.
  */
 private fun prepareAttachment(context: Context, uri: Uri): MorrowAttachment? {
     val resolver = context.contentResolver
     val mime = resolver.getType(uri) ?: "application/octet-stream"
     val name = queryDisplayName(context, uri) ?: "attachment"
+
+    if (mime == "application/pdf" || name.endsWith(".pdf", ignoreCase = true)) {
+        val pdfText = extractPdfText(context, uri)
+        return MorrowAttachment(
+            name = name,
+            mime = "application/pdf",
+            isImage = false,
+            payload = "Extracted PDF text (up to $MAX_TEXT_BYTES characters):\n$pdfText"
+        )
+    }
 
     if (mime.startsWith("image/")) {
         val original = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) } ?: return null
@@ -2860,21 +3284,97 @@ private fun BrandMark(modifier: Modifier = Modifier) {
 private fun SidebarAction(
     icon: @Composable () -> Unit,
     label: String,
+    selected: Boolean = false,
     onClick: () -> Unit
 ) {
+    val accent = LocalMorrowAccent.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(13.dp))
+            .clip(RoundedCornerShape(14.dp))
+            .background(
+                brush = if (selected) {
+                    Brush.linearGradient(listOf(Color(0xFF30206B), Color(0xFF192047)))
+                } else {
+                    Brush.linearGradient(listOf(Color.Transparent, Color.Transparent))
+                },
+                shape = RoundedCornerShape(14.dp)
+            )
+            .border(
+                width = if (selected) 1.dp else 0.dp,
+                color = if (selected) accent.copy(alpha = 0.72f) else Color.Transparent,
+                shape = RoundedCornerShape(14.dp)
+            )
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(modifier = Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+        Box(modifier = Modifier.size(22.dp), contentAlignment = Alignment.Center) {
             icon()
         }
-        Spacer(Modifier.width(11.dp))
-        Text(label, color = MorrowText, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Spacer(Modifier.width(13.dp))
+        Text(
+            label,
+            color = if (selected) MorrowText else MorrowMuted,
+            fontSize = 14.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+        )
+    }
+}
+
+@Composable
+private fun SidebarProCard(accent: Color, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(18.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(
+                Brush.linearGradient(listOf(Color(0xFF26145F), Color(0xFF1D2455), Color(0xFF10182E))),
+                shape
+            )
+            .border(1.dp, accent.copy(alpha = 0.72f), shape)
+            .clickable(onClick = onClick)
+            .padding(12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            BrandMark(Modifier.size(34.dp))
+            Spacer(Modifier.width(9.dp))
+            Text("Morrow Pro", color = MorrowText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.weight(1f))
+            Box(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(Color(0xFF18385A))
+                    .border(1.dp, Color(0xFF38618A), CircleShape)
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text("Coming Soon", color = Color(0xFF9DE6FF), fontSize = 9.sp)
+            }
+        }
+        Spacer(Modifier.height(7.dp))
+        Text("More models. More tools. For you.", color = MorrowMuted, fontSize = 11.sp)
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Explore Pro", color = accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = accent, modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
+private fun relativeChatTime(chatId: String, messages: List<MorrowChatMessage>): String {
+    val timestamp = messages.lastOrNull()?.id?.substringAfterLast("_")?.toLongOrNull()
+        ?: chatId.toLongOrNull()
+        ?: return "Saved chat"
+    val elapsed = (System.currentTimeMillis() - timestamp).coerceAtLeast(0L)
+    return when {
+        elapsed < 60_000L -> "Just now"
+        elapsed < 3_600_000L -> "${elapsed / 60_000L}m ago"
+        elapsed < 86_400_000L -> "${elapsed / 3_600_000L}h ago"
+        elapsed < 604_800_000L -> "${elapsed / 86_400_000L}d ago"
+        else -> SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(timestamp))
     }
 }
 
