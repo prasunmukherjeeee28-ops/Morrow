@@ -3607,13 +3607,23 @@ private data class MdHeading(val level: Int, val text: String) : MdBlock
 private data class MdParagraph(val text: String) : MdBlock
 private data class MdCode(val language: String, val code: String) : MdBlock
 private data class MdQuote(val text: String) : MdBlock
-private data class MdListItem(val ordered: Boolean, val number: Int, val depth: Int, val text: String)
+private data class MdCallout(val kind: String, val text: String) : MdBlock
+private data class MdListItem(
+    val ordered: Boolean,
+    val number: Int,
+    val depth: Int,
+    val text: String,
+    val task: Boolean = false,
+    val checked: Boolean = false
+)
 private data class MdList(val items: List<MdListItem>) : MdBlock
 private data class MdTable(val header: List<String>, val rows: List<List<String>>) : MdBlock
 private object MdRule : MdBlock
 
 private val UnorderedItemRegex = Regex("^(\\s*)[-*+]\\s+(.*)$")
 private val OrderedItemRegex = Regex("^(\\s*)(\\d+)[.)]\\s+(.*)$")
+private val TaskListRegex = Regex("^(\\s*)[-*+]\\s+\\[([ xX])\\]\\s+(.*)$")
+private val CalloutStartRegex = Regex("^\\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\\]\\s*(.*)$", RegexOption.IGNORE_CASE)
 private val HtmlBreakRegex = Regex("(?i)<br\\s*/?>")
 private val HtmlTagRegex = Regex("</?[a-zA-Z][a-zA-Z0-9]*(\\s[^<>]*)?/?>")
 
@@ -3624,18 +3634,19 @@ private fun MorrowMarkdown(text: String, modifier: Modifier = Modifier) {
     }
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(13.dp)
+        verticalArrangement = Arrangement.spacedBy(11.dp)
     ) {
         blocks.forEach { block ->
             when (block) {
                 is MdHeading -> MdHeadingBlock(block)
                 is MdParagraph -> InlineText(
                     text = block.text,
-                    fontSize = 15.5.sp,
-                    lineHeight = 26.sp
+                    fontSize = 16.sp,
+                    lineHeight = 27.sp
                 )
                 is MdCode -> MdCodeBlock(block.language, block.code)
                 is MdQuote -> MdQuoteBlock(block.text)
+                is MdCallout -> MdCalloutBlock(block.kind, block.text)
                 is MdList -> MdListBlock(block.items)
                 is MdTable -> MdTableBlock(block.header, block.rows)
                 MdRule -> Box(
@@ -3653,18 +3664,36 @@ private fun MorrowMarkdown(text: String, modifier: Modifier = Modifier) {
 @Composable
 private fun MdHeadingBlock(block: MdHeading) {
     val accent = LocalMorrowAccent.current
-    InlineText(
-        text = block.text,
-        fontSize = when (block.level) {
-            1 -> 22.sp
-            2 -> 19.sp
-            3 -> 17.sp
-            else -> 15.sp
-        },
-        lineHeight = 26.sp,
-        fontWeight = FontWeight.Bold,
-        color = if (block.level <= 2) MorrowText else accent
-    )
+    val fontSize = when (block.level) {
+        1 -> 28.sp
+        2 -> 24.sp
+        3 -> 21.sp
+        4 -> 18.sp
+        5 -> 17.sp
+        else -> 16.sp
+    }
+    val lineHeight = when (block.level) {
+        1 -> 35.sp
+        2 -> 31.sp
+        3 -> 28.sp
+        4 -> 25.sp
+        else -> 23.sp
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        InlineText(
+            text = block.text,
+            fontSize = fontSize,
+            lineHeight = lineHeight,
+            fontWeight = FontWeight.Bold,
+            color = if (block.level <= 4) MorrowText else accent
+        )
+        if (block.level == 1) {
+            Box(
+                modifier = Modifier.widthIn(min = 28.dp, max = 56.dp)
+                    .height(3.dp).clip(RoundedCornerShape(2.dp)).background(accent)
+            )
+        }
+    }
 }
 
 @Composable
@@ -3716,8 +3745,8 @@ private fun MdCodeBlock(language: String, code: String) {
             text = code,
             color = MorrowText,
             fontFamily = FontFamily.Monospace,
-            fontSize = 13.sp,
-            lineHeight = 21.sp,
+            fontSize = 13.5.sp,
+            lineHeight = 22.sp,
             softWrap = false,
             modifier = Modifier
                 .fillMaxWidth()
@@ -3731,50 +3760,79 @@ private fun MdCodeBlock(language: String, code: String) {
 private fun MdQuoteBlock(text: String) {
     val accent = LocalMorrowAccent.current
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(IntrinsicSize.Min)
+        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)
+            .clip(RoundedCornerShape(12.dp)).background(MorrowSurface)
+            .border(1.dp, MorrowBorder.copy(alpha = 0.7f), RoundedCornerShape(12.dp)).padding(12.dp)
     ) {
         Box(
-            modifier = Modifier
-                .width(3.dp)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(2.dp))
-                .background(accent)
+            modifier = Modifier.width(3.dp).fillMaxHeight()
+                .clip(RoundedCornerShape(2.dp)).background(accent)
         )
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(11.dp))
         InlineText(
-            text = text,
-            modifier = Modifier.weight(1f),
-            color = MorrowText.copy(alpha = 0.9f),
-            fontSize = 14.sp,
-            lineHeight = 22.sp
+            text = text, modifier = Modifier.weight(1f),
+            color = MorrowText.copy(alpha = 0.94f), fontSize = 15.sp, lineHeight = 25.sp
         )
+    }
+}
+
+@Composable
+private fun MdCalloutBlock(kind: String, text: String) {
+    val accent = LocalMorrowAccent.current
+    val tone = when (kind) {
+        "WARNING", "CAUTION" -> Color(0xFFFFB37C)
+        "IMPORTANT" -> Color(0xFF92B9FF)
+        "TIP" -> Color(0xFF87D9B1)
+        else -> accent
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+            .background(tone.copy(alpha = 0.08f))
+            .border(1.dp, tone.copy(alpha = 0.32f), RoundedCornerShape(14.dp)).padding(13.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        when (kind) {
+            "TIP" -> Icon(Icons.Outlined.Lightbulb, contentDescription = null, tint = tone, modifier = Modifier.size(20.dp))
+            "WARNING", "CAUTION" -> Icon(Icons.Outlined.WarningAmber, contentDescription = null, tint = tone, modifier = Modifier.size(20.dp))
+            else -> Icon(Icons.Outlined.Info, contentDescription = null, tint = tone, modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(kind.lowercase(Locale.ROOT).replaceFirstChar { it.uppercase() }, color = tone, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            InlineText(text = text, fontSize = 14.5.sp, lineHeight = 23.sp)
+        }
     }
 }
 
 @Composable
 private fun MdListBlock(items: List<MdListItem>) {
     val accent = LocalMorrowAccent.current
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items.forEach { item ->
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = (item.depth * 16).dp)
+                modifier = Modifier.fillMaxWidth().padding(start = (item.depth * 16).dp),
+                verticalAlignment = Alignment.Top
             ) {
-                Text(
-                    if (item.ordered) "${item.number}." else "•",
-                    color = accent,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.width(22.dp)
-                )
+                when {
+                    item.task -> {
+                        Box(
+                            modifier = Modifier.padding(top = 4.dp).size(16.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(if (item.checked) accent else Color.Transparent)
+                                .border(1.dp, if (item.checked) accent else MorrowMuted.copy(alpha = 0.8f), RoundedCornerShape(4.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (item.checked) Text("✓", color = Color(0xFF17132D), fontSize = 11.sp, fontWeight = FontWeight.Bold, lineHeight = 12.sp)
+                        }
+                    }
+                    item.ordered -> Text(item.number.toString() + ".", color = accent, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(25.dp))
+                    else -> Text("•", color = accent, fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(25.dp), lineHeight = 24.sp)
+                }
+                if (item.task) Spacer(Modifier.width(9.dp))
                 InlineText(
-                    text = item.text,
-                    modifier = Modifier.weight(1f),
-                    fontSize = 15.sp,
-                    lineHeight = 23.sp
+                    text = item.text, modifier = Modifier.weight(1f),
+                    fontSize = 15.5.sp, lineHeight = 25.sp,
+                    color = if (item.task && item.checked) MorrowMuted else MorrowText
                 )
             }
         }
@@ -3784,55 +3842,52 @@ private fun MdListBlock(items: List<MdListItem>) {
 @Composable
 private fun MdTableBlock(header: List<String>, rows: List<List<String>>) {
     val columns = rows.fold(header.size) { acc, row -> maxOf(acc, row.size) }.coerceAtLeast(1)
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .border(1.dp, MorrowBorder, RoundedCornerShape(12.dp))
-    ) {
-        MdTableRow(
-            cells = List(columns) { header.getOrElse(it) { "" } },
-            background = MorrowSurfaceRaised,
-            bold = true
-        )
-        rows.forEachIndexed { index, row ->
-            HorizontalDivider(color = MorrowBorder)
+    val shape = RoundedCornerShape(12.dp)
+    val tableWidth = (columns * 154).dp
+    Box(modifier = Modifier.fillMaxWidth().clip(shape).border(1.dp, MorrowBorder, shape)) {
+        Column(modifier = Modifier.horizontalScroll(rememberScrollState()).width(tableWidth)) {
             MdTableRow(
-                cells = List(columns) { row.getOrElse(it) { "" } },
-                background = if (index % 2 == 0) MorrowSurface else MorrowBackground,
-                bold = false
+                cells = List(columns) { header.getOrElse(it) { "" } },
+                columnCount = columns,
+                background = MorrowSurfaceRaised,
+                bold = true
             )
+            rows.forEachIndexed { index, row ->
+                Box(Modifier.width(tableWidth).height(1.dp).background(MorrowBorder))
+                MdTableRow(
+                    cells = List(columns) { row.getOrElse(it) { "" } },
+                    columnCount = columns,
+                    background = if (index % 2 == 0) MorrowSurface else MorrowBackground,
+                    bold = false
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun MdTableRow(cells: List<String>, background: Color, bold: Boolean) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(background)
-            .padding(horizontal = 8.dp, vertical = 8.dp)
-    ) {
+private fun MdTableRow(cells: List<String>, columnCount: Int, background: Color, bold: Boolean) {
+    Row(modifier = Modifier.width((columnCount * 154).dp).background(background).padding(vertical = 2.dp)) {
         cells.forEach { cell ->
             InlineText(
                 text = cell,
-                modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
-                fontSize = 13.sp,
-                lineHeight = 19.sp,
-                fontWeight = if (bold) FontWeight.Bold else null
+                modifier = Modifier.width(154.dp).padding(horizontal = 10.dp, vertical = 9.dp),
+                fontSize = 13.5.sp,
+                lineHeight = 21.sp,
+                fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
+                color = if (bold) MorrowText else MorrowText.copy(alpha = 0.94f)
             )
         }
     }
 }
 
-/** Text with inline markdown styling. Unknown syntax is shown literally. */
+
 @Composable
 private fun InlineText(
     text: String,
     modifier: Modifier = Modifier,
     color: Color = MorrowText,
-    fontSize: TextUnit = 15.sp,
+    fontSize: TextUnit = 16.sp,
     lineHeight: TextUnit = TextUnit.Unspecified,
     fontWeight: FontWeight? = null
 ) {
@@ -3844,6 +3899,7 @@ private fun InlineText(
         text = annotated,
         modifier = modifier,
         color = color,
+        fontFamily = FontFamily.SansSerif,
         fontSize = fontSize,
         lineHeight = lineHeight,
         fontWeight = fontWeight
@@ -3903,16 +3959,37 @@ private fun parseMarkdownBlocks(raw: String): List<MdBlock> {
                     quoteLines += lines[i].trim().removePrefix(">").trimStart()
                     i++
                 }
-                blocks += MdQuote(quoteLines.joinToString("\n"))
+                val callout = CalloutStartRegex.matchEntire(quoteLines.firstOrNull().orEmpty())
+                if (callout != null) {
+                    val kind = callout.groupValues[1].uppercase(Locale.ROOT)
+                    val body = listOf(callout.groupValues[2]) + quoteLines.drop(1)
+                    blocks += MdCallout(kind, body.filter { it.isNotBlank() }.joinToString("\n"))
+                } else {
+                    blocks += MdQuote(quoteLines.joinToString("\n"))
+                }
             }
 
-            UnorderedItemRegex.matchEntire(line) != null || OrderedItemRegex.matchEntire(line) != null -> {
+            TaskListRegex.matchEntire(line) != null ||
+                UnorderedItemRegex.matchEntire(line) != null ||
+                OrderedItemRegex.matchEntire(line) != null -> {
                 val items = mutableListOf<MdListItem>()
                 while (i < lines.size) {
                     val current = lines[i]
+                    val task = TaskListRegex.matchEntire(current)
                     val unordered = UnorderedItemRegex.matchEntire(current)
                     val ordered = OrderedItemRegex.matchEntire(current)
                     when {
+                        task != null -> {
+                            items += MdListItem(
+                                ordered = false,
+                                number = 0,
+                                depth = indentDepth(task.groupValues[1]),
+                                text = task.groupValues[3],
+                                task = true,
+                                checked = task.groupValues[2].equals("x", ignoreCase = true)
+                            )
+                            i++
+                        }
                         unordered != null -> {
                             items += MdListItem(
                                 ordered = false,
@@ -3992,6 +4069,7 @@ private fun startsBlock(lines: List<String>, index: Int): Boolean {
         isFenceStart(trimmed) ||
         trimmed.startsWith(">") ||
         isRule(trimmed) ||
+        TaskListRegex.matchEntire(line) != null ||
         UnorderedItemRegex.matchEntire(line) != null ||
         OrderedItemRegex.matchEntire(line) != null ||
         isTableStart(lines, index)
@@ -4021,6 +4099,19 @@ private fun AnnotatedString.Builder.appendInline(text: String, depth: Int, accen
                 i += 2
             }
 
+            text.startsWith("==", i) -> {
+                val end = text.indexOf("==", i + 2)
+                if (end > i + 2 && depth < 4) {
+                    withStyle(SpanStyle(background = accent.copy(alpha = 0.2f), color = accent, fontWeight = FontWeight.SemiBold)) {
+                        appendInline(text.substring(i + 2, end), depth + 1, accent)
+                    }
+                    i = end + 2
+                } else {
+                    append("==")
+                    i += 2
+                }
+            }
+
             c == '`' -> {
                 val end = text.indexOf('`', i + 1)
                 if (end > i) {
@@ -4037,6 +4128,20 @@ private fun AnnotatedString.Builder.appendInline(text: String, depth: Int, accen
                 } else {
                     append(c)
                     i++
+                }
+            }
+
+            text.startsWith("***", i) || text.startsWith("___", i) -> {
+                val delimiter = text.substring(i, i + 3)
+                val end = text.indexOf(delimiter, i + 3)
+                if (end > i + 3 && depth < 4) {
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)) {
+                        appendInline(text.substring(i + 3, end), depth + 1, accent)
+                    }
+                    i = end + 3
+                } else {
+                    append(delimiter)
+                    i += 3
                 }
             }
 
