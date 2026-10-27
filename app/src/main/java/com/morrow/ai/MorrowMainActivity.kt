@@ -82,6 +82,8 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -601,6 +603,9 @@ private fun MorrowMainScreen() {
     var accentIndex by remember { mutableIntStateOf(settingsPrefs.getInt(KEY_ACCENT, 0)) }
     val accent = MorrowAccentChoices[accentIndex.coerceIn(0, MorrowAccentChoices.lastIndex)]
 
+    var showHome by remember { mutableStateOf(true) }
+    var showChats by remember { mutableStateOf(false) }
+    var showModelsDialog by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showExplore by remember { mutableStateOf(false) }
     var showLibrary by remember { mutableStateOf(false) }
@@ -668,6 +673,11 @@ private fun MorrowMainScreen() {
     }
 
     fun createNewChat(temporary: Boolean = false) {
+        showHome = false
+        showChats = false
+        showSettings = false
+        showExplore = false
+        showLibrary = false
         val id = System.currentTimeMillis().toString()
         conversations.add(
             0,
@@ -684,6 +694,40 @@ private fun MorrowMainScreen() {
         attachmentsOpen = false
         typingMessageId = null
         typingSkip = false
+    }
+
+    fun navigateHomeTab(tab: String) {
+        when (tab) {
+            "Home" -> {
+                showHome = true
+                showChats = false
+                showExplore = false
+                showLibrary = false
+                showSettings = false
+            }
+            "Chats" -> {
+                showHome = false
+                showChats = true
+                showExplore = false
+                showLibrary = false
+                showSettings = false
+            }
+            "Models" -> showModelsDialog = true
+            "Tools" -> {
+                showHome = false
+                showChats = false
+                showExplore = true
+                showLibrary = false
+                showSettings = false
+            }
+            "Settings" -> {
+                showHome = false
+                showChats = false
+                showExplore = false
+                showLibrary = false
+                showSettings = true
+            }
+        }
     }
 
     fun addAttachments(uris: List<Uri>) {
@@ -721,6 +765,8 @@ private fun MorrowMainScreen() {
     }
 
     fun sendPrompt(prompt: String, attachments: List<MorrowAttachment>) {
+        showHome = false
+        showChats = false
         val targetChatId = activeId
         if ((prompt.isBlank() && attachments.isEmpty()) || targetChatId in loadingConversationIds) return
 
@@ -915,10 +961,21 @@ private fun MorrowMainScreen() {
 
                         Spacer(Modifier.height(22.dp))
                         SidebarAction(
-                            icon = { ChatIcon(tint = if (!showExplore && !showLibrary && !showSettings) accent else MorrowMuted) },
-                            label = "Chat",
-                            selected = !showExplore && !showLibrary && !showSettings
+                            icon = { Icon(Icons.Outlined.Home, contentDescription = null, tint = if (showHome) accent else MorrowMuted, modifier = Modifier.size(22.dp)) },
+                            label = "Home",
+                            selected = showHome
                         ) {
+                            navigateHomeTab("Home")
+                            scope.launch { drawerState.close() }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        SidebarAction(
+                            icon = { ChatIcon(tint = if (!showHome && !showExplore && !showLibrary && !showSettings && !showChats) accent else MorrowMuted) },
+                            label = "Chat",
+                            selected = !showHome && !showChats && !showExplore && !showLibrary && !showSettings
+                        ) {
+                            showHome = false
+                            showChats = false
                             showExplore = false
                             showLibrary = false
                             showSettings = false
@@ -930,6 +987,8 @@ private fun MorrowMainScreen() {
                             label = "Explore",
                             selected = showExplore
                         ) {
+                            showHome = false
+                            showChats = false
                             showExplore = true
                             showLibrary = false
                             showSettings = false
@@ -941,6 +1000,8 @@ private fun MorrowMainScreen() {
                             label = "Library",
                             selected = showLibrary
                         ) {
+                            showHome = false
+                            showChats = false
                             showLibrary = true
                             showExplore = false
                             showSettings = false
@@ -952,6 +1013,8 @@ private fun MorrowMainScreen() {
                             label = "Settings",
                             selected = showSettings
                         ) {
+                            showHome = false
+                            showChats = false
                             showSettings = true
                             showExplore = false
                             showLibrary = false
@@ -1135,7 +1198,47 @@ private fun MorrowMainScreen() {
                         typingMessageId = null
                         typingSkip = false
                         showLibrary = false
+                        showHome = false
                     }
+                )
+            } else if (showChats) {
+                RecentChatsScreen(
+                    chats = conversations.filterNot { it.temporary }.sortedByDescending { it.id.toLongOrNull() ?: 0L },
+                    messagesByConversation = messagesByConversation,
+                    onBackHome = { navigateHomeTab("Home") },
+                    onOpenChat = { chatId ->
+                        activeId = chatId
+                        input = ""
+                        pendingAttachments = emptyList()
+                        attachmentsOpen = false
+                        typingMessageId = null
+                        typingSkip = false
+                        showChats = false
+                        showHome = false
+                    }
+                )
+            } else if (showHome) {
+                HomeScreen(
+                    clock = clock,
+                    recentChats = conversations.filterNot { it.temporary }.sortedByDescending { it.id.toLongOrNull() ?: 0L }.take(3),
+                    messagesByConversation = messagesByConversation,
+                    onMenuClick = { scope.launch { drawerState.open() } },
+                    onAskAnything = { createNewChat() },
+                    onPromptClick = { prompt ->
+                        createNewChat()
+                        input = prompt
+                    },
+                    onOpenChat = { chatId ->
+                        activeId = chatId
+                        input = ""
+                        pendingAttachments = emptyList()
+                        attachmentsOpen = false
+                        typingMessageId = null
+                        typingSkip = false
+                        showHome = false
+                    },
+                    onViewAllChats = { navigateHomeTab("Chats") },
+                    onTabSelected = { navigateHomeTab(it) }
                 )
             } else {
                 Column(
@@ -1150,45 +1253,30 @@ private fun MorrowMainScreen() {
                         temporary = activeConversation?.temporary == true
                     )
 
-                    Crossfade(
-                        targetState = currentMessages.isEmpty(),
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                        label = "chatArea"
-                    ) { isEmpty ->
-                        if (isEmpty) {
-                            WelcomeHero(
-                                clock = clock,
-                                palette = palette,
-                                animate = landscapeOn,
-                                onPromptClick = { input = it }
-                            )
-                        } else {
-                            Box(modifier = Modifier.fillMaxSize()) {
-                                LandscapeBackdrop(
-                                    palette = palette,
-                                    animate = landscapeOn,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .graphicsLayer { alpha = 0.3f }
-                                )
-                                MessageList(
-                                    messages = currentMessages,
-                                    isLoading = isLoading,
-                                    listState = listState,
-                                    loadingKey = "loading_$activeId",
-                                    typingMessageId = typingMessageId,
-                                    typingSkip = typingSkip,
-                                    speakingId = speakingId,
-                                    onCopy = { copyText(it.text) },
-                                    onShare = { shareText(it.text) },
-                                    onSpeak = { toggleSpeak(it) },
-                                    onFeedback = { message, value -> setFeedback(message, value) },
-                                    onRegenerate = { regenerateLast() },
-                                    onEdit = { message -> editMessage(message) },
-                                    onTypingDone = { onTypingDone() }
-                                )
-                            }
-                        }
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        LandscapeBackdrop(
+                            palette = palette,
+                            animate = landscapeOn,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer { alpha = 0.3f }
+                        )
+                        MessageList(
+                            messages = currentMessages,
+                            isLoading = isLoading,
+                            listState = listState,
+                            loadingKey = "loading_$activeId",
+                            typingMessageId = typingMessageId,
+                            typingSkip = typingSkip,
+                            speakingId = speakingId,
+                            onCopy = { copyText(it.text) },
+                            onShare = { shareText(it.text) },
+                            onSpeak = { toggleSpeak(it) },
+                            onFeedback = { message, value -> setFeedback(message, value) },
+                            onRegenerate = { regenerateLast() },
+                            onEdit = { message -> editMessage(message) },
+                            onTypingDone = { onTypingDone() }
+                        )
                     }
 
                     MorrowComposer(
@@ -1308,6 +1396,23 @@ private fun MorrowMainScreen() {
                 },
                 dismissButton = {
                     TextButton(onClick = { renameChatId = null }) { Text("Cancel", color = MorrowMuted) }
+                }
+            )
+        }
+
+        if (showModelsDialog) {
+            AlertDialog(
+                onDismissRequest = { showModelsDialog = false },
+                containerColor = MorrowSurface,
+                title = { Text("Models", color = MorrowText) },
+                text = {
+                    Text(
+                        "Morrow currently uses the model configured by its backend. A selectable model list is not available yet.",
+                        color = MorrowMuted
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { showModelsDialog = false }) { Text("Got it", color = LocalMorrowAccent.current) }
                 }
             )
         }
@@ -1497,6 +1602,353 @@ private fun LibraryScreen(
                         Icon(Icons.Outlined.BookmarkBorder, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(12.dp))
                         Text(chat.title, color = MorrowText, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                        Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MorrowMuted, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------- Home landing ----------
+
+@Composable
+private fun HomeScreen(
+    clock: MorrowClock,
+    recentChats: List<MorrowConversationSession>,
+    messagesByConversation: Map<String, List<MorrowChatMessage>>,
+    onMenuClick: () -> Unit,
+    onAskAnything: () -> Unit,
+    onPromptClick: (String) -> Unit,
+    onOpenChat: (String) -> Unit,
+    onViewAllChats: () -> Unit,
+    onTabSelected: (String) -> Unit
+) {
+    val accent = LocalMorrowAccent.current
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MorrowBackground)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .height(58.dp)
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onMenuClick, modifier = Modifier.size(42.dp)) {
+                MenuIcon(tint = MorrowText)
+            }
+            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                Text(
+                    "Morrow",
+                    color = MorrowText,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 0.2.sp
+                )
+            }
+            IconButton(onClick = onAskAnything, modifier = Modifier.size(42.dp)) {
+                BrandMark(Modifier.size(30.dp))
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+        ) {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                clock.phase.greeting,
+                color = MorrowMuted,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "What would you like\nto explore today?",
+                color = MorrowText,
+                fontFamily = FontFamily.Serif,
+                fontSize = 27.sp,
+                lineHeight = 32.sp,
+                fontWeight = FontWeight.Medium
+            )
+
+            Spacer(Modifier.height(24.dp))
+            val heroShape = RoundedCornerShape(22.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(heroShape)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(Color(0xFF201B42), Color(0xFF151B30), Color(0xFF111629))
+                        ),
+                        heroShape
+                    )
+                    .border(1.dp, Color(0xFF39305F), heroShape)
+                    .clickable(onClick = onAskAnything)
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(RoundedCornerShape(17.dp))
+                        .background(Brush.linearGradient(listOf(Color(0xFF302559), Color(0xFF191D34))))
+                        .border(1.dp, Color(0xFF443A75), RoundedCornerShape(17.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    BrandMark(Modifier.size(58.dp))
+                }
+                Spacer(Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Ask anything", color = MorrowText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(7.dp))
+                    Text(
+                        "Get instant answers, creative ideas, code, and more.",
+                        color = MorrowMuted,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
+                    )
+                }
+                Spacer(Modifier.width(6.dp))
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(13.dp))
+                        .background(accent),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Outlined.ArrowForward, contentDescription = "Ask anything", tint = Color(0xFF17132D), modifier = Modifier.size(21.dp))
+                }
+            }
+
+            Spacer(Modifier.height(15.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                HomeShortcut(
+                    label = "Study\n& Learn",
+                    icon = { Icon(Icons.Outlined.School, contentDescription = null, tint = accent, modifier = Modifier.size(21.dp)) },
+                    modifier = Modifier.weight(1f)
+                ) { onPromptClick("Help me study a topic step by step.") }
+                HomeShortcut(
+                    label = "Create\nImages",
+                    icon = { Icon(Icons.Outlined.Image, contentDescription = null, tint = accent, modifier = Modifier.size(21.dp)) },
+                    modifier = Modifier.weight(1f)
+                ) { onPromptClick("Help me create an image of ") }
+                HomeShortcut(
+                    label = "Write\nSomething",
+                    icon = { Icon(Icons.Outlined.Edit, contentDescription = null, tint = accent, modifier = Modifier.size(21.dp)) },
+                    modifier = Modifier.weight(1f)
+                ) { onPromptClick("Help me write ") }
+                HomeShortcut(
+                    label = "Code\nHelp",
+                    icon = { Icon(Icons.Outlined.Code, contentDescription = null, tint = accent, modifier = Modifier.size(21.dp)) },
+                    modifier = Modifier.weight(1f)
+                ) { onPromptClick("Help me with coding: ") }
+            }
+
+            Spacer(Modifier.height(26.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text("Recent Chats", color = MorrowText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Text(
+                    "View all",
+                    color = accent,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onViewAllChats).padding(7.dp)
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            if (recentChats.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(17.dp))
+                        .background(MorrowSurface)
+                        .border(1.dp, MorrowBorder, RoundedCornerShape(17.dp))
+                        .padding(18.dp)
+                ) {
+                    Text("Your recent conversations will appear here.", color = MorrowMuted, fontSize = 12.sp)
+                }
+            } else {
+                recentChats.forEach { chat ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp)
+                            .clip(RoundedCornerShape(17.dp))
+                            .background(MorrowSurface)
+                            .border(1.dp, MorrowBorder.copy(alpha = 0.8f), RoundedCornerShape(17.dp))
+                            .clickable { onOpenChat(chat.id) }
+                            .padding(horizontal = 12.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(13.dp))
+                                .background(Color(0xFF292343)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(chat.title, color = MorrowText, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Spacer(Modifier.height(3.dp))
+                            Text(
+                                if (chat.pinned) "Pinned · " + relativeChatTime(chat.id, messagesByConversation[chat.id].orEmpty())
+                                else relativeChatTime(chat.id, messagesByConversation[chat.id].orEmpty()),
+                                color = MorrowMuted,
+                                fontSize = 10.sp,
+                                maxLines = 1
+                            )
+                        }
+                        Icon(Icons.Outlined.ChevronRight, contentDescription = "Open chat", tint = MorrowMuted, modifier = Modifier.size(19.dp))
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
+        HomeBottomNavigation(onTabSelected = onTabSelected)
+    }
+}
+
+@Composable
+private fun HomeShortcut(
+    label: String,
+    icon: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val accent = LocalMorrowAccent.current
+    val shape = RoundedCornerShape(18.dp)
+    Column(
+        modifier = modifier
+            .height(104.dp)
+            .clip(shape)
+            .background(MorrowSurface)
+            .border(1.dp, MorrowBorder, shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 5.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(9.dp)
+    ) {
+        icon()
+        Text(
+            label,
+            color = MorrowText,
+            fontSize = 10.5.sp,
+            lineHeight = 13.sp,
+            textAlign = TextAlign.Center,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+@Composable
+private fun HomeBottomNavigation(onTabSelected: (String) -> Unit) {
+    val accent = LocalMorrowAccent.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(start = 13.dp, end = 13.dp, top = 7.dp, bottom = 8.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(Color(0xFF111629))
+            .border(1.dp, MorrowBorder, RoundedCornerShape(22.dp))
+            .padding(horizontal = 5.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        HomeNavItem("Home", Icons.Outlined.Home, selected = true, modifier = Modifier.weight(1f), onClick = onTabSelected)
+        HomeNavItem("Chats", Icons.Outlined.Forum, selected = false, modifier = Modifier.weight(1f), onClick = onTabSelected)
+        HomeNavItem("Models", Icons.Outlined.Hub, selected = false, modifier = Modifier.weight(1f), onClick = onTabSelected)
+        HomeNavItem("Tools", Icons.Outlined.Widgets, selected = false, modifier = Modifier.weight(1f), onClick = onTabSelected)
+        HomeNavItem("Settings", Icons.Outlined.Settings, selected = false, modifier = Modifier.weight(1f), onClick = onTabSelected)
+    }
+}
+
+@Composable
+private fun HomeNavItem(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: (String) -> Unit
+) {
+    val accent = LocalMorrowAccent.current
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .clickable { onClick(label) }
+            .padding(vertical = 5.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Icon(icon, contentDescription = label, tint = if (selected) accent else MorrowMuted, modifier = Modifier.size(21.dp))
+        Text(label, color = if (selected) accent else MorrowMuted, fontSize = 9.sp, maxLines = 1)
+    }
+}
+
+@Composable
+private fun RecentChatsScreen(
+    chats: List<MorrowConversationSession>,
+    messagesByConversation: Map<String, List<MorrowChatMessage>>,
+    onBackHome: () -> Unit,
+    onOpenChat: (String) -> Unit
+) {
+    val accent = LocalMorrowAccent.current
+    Column(modifier = Modifier.fillMaxSize().background(MorrowBackground)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().statusBarsPadding().height(58.dp).padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBackHome, modifier = Modifier.size(42.dp)) { BackIcon(tint = accent) }
+            Text("Chats", color = MorrowText, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+        }
+        if (chats.isEmpty()) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(Icons.Outlined.Forum, contentDescription = null, tint = accent, modifier = Modifier.size(42.dp))
+                Spacer(Modifier.height(13.dp))
+                Text("No chats yet", color = MorrowText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(5.dp))
+                Text("Start a conversation from Home.", color = MorrowMuted, fontSize = 12.sp, textAlign = TextAlign.Center)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 17.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(chats, key = { it.id }) { chat ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(17.dp))
+                            .background(MorrowSurface)
+                            .border(1.dp, MorrowBorder, RoundedCornerShape(17.dp))
+                            .clickable { onOpenChat(chat.id) }
+                            .padding(13.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null, tint = accent, modifier = Modifier.size(24.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(chat.title, color = MorrowText, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Spacer(Modifier.height(3.dp))
+                            Text(relativeChatTime(chat.id, messagesByConversation[chat.id].orEmpty()), color = MorrowMuted, fontSize = 11.sp)
+                        }
                         Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MorrowMuted, modifier = Modifier.size(18.dp))
                     }
                 }
@@ -1865,17 +2317,6 @@ private fun MorrowMessageRow(
 ) {
     var showUserMessageMenu by remember(message.id) { mutableStateOf(false) }
     var selectingText by remember(message.id) { mutableStateOf(false) }
-    val sentAt = remember(message.id) {
-        message.id.substringAfterLast("_").toLongOrNull()?.let { timestamp ->
-            SimpleDateFormat("MMM d, yyyy • h:mm a", Locale.getDefault()).format(Date(timestamp))
-        } ?: "Time unavailable"
-    }
-
-    val messageTime = remember(message.id) {
-        message.id.substringAfterLast("_").toLongOrNull()?.let { timestamp ->
-            SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(timestamp))
-        } ?: ""
-    }
 
     val entrance = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
@@ -1905,54 +2346,54 @@ private fun MorrowMessageRow(
                     Spacer(Modifier.height(6.dp))
                 }
                 if (message.text.isNotBlank()) {
-                    Box(
-                        modifier = Modifier
-                            .widthIn(max = 320.dp)
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    colors = listOf(Color(0xFF272E45), Color(0xFF1B2236))
+                    Box(modifier = Modifier.widthIn(max = 320.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(
+                                    Brush.linearGradient(
+                                        colors = listOf(Color(0xFF272E45), Color(0xFF1B2236))
+                                    )
                                 )
-                            )
-                            .border(1.dp, MorrowBorder.copy(alpha = 0.9f), RoundedCornerShape(20.dp))
-                            .combinedClickable(onClick = {}, onLongClick = { showUserMessageMenu = true })
-                            .padding(horizontal = 16.dp, vertical = 12.dp)
-                    ) {
-                        Column(horizontalAlignment = Alignment.End) {
-                            if (selectingText) SelectionContainer { Text(message.text, color = MorrowText, fontSize = 15.sp, lineHeight = 23.sp) }
-                            else Text(message.text, color = MorrowText, fontSize = 15.sp, lineHeight = 23.sp)
-                            if (messageTime.isNotBlank()) {
-                                Spacer(Modifier.height(6.dp))
-                                Text(messageTime, color = MorrowMuted.copy(alpha = 0.85f), fontSize = 10.sp)
+                                .border(1.dp, MorrowBorder.copy(alpha = 0.9f), RoundedCornerShape(20.dp))
+                                .combinedClickable(onClick = {}, onLongClick = { showUserMessageMenu = true })
+                                .padding(horizontal = 16.dp, vertical = 12.dp)
+                        ) {
+                            if (selectingText) SelectionContainer {
+                                Text(message.text, color = MorrowText, fontSize = 15.sp, lineHeight = 23.sp)
+                            } else {
+                                Text(message.text, color = MorrowText, fontSize = 15.sp, lineHeight = 23.sp)
                             }
                         }
+                        DropdownMenu(
+                            expanded = showUserMessageMenu,
+                            onDismissRequest = { showUserMessageMenu = false },
+                            containerColor = MorrowSurface,
+                            shape = RoundedCornerShape(15.dp),
+                            shadowElevation = 12.dp
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Copy", color = MorrowText) },
+                                leadingIcon = { CopyIcon(Modifier.size(18.dp), MorrowMuted) },
+                                onClick = { onCopy(); showUserMessageMenu = false }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Edit", color = MorrowText) },
+                                leadingIcon = { ComposeIcon(Modifier.size(18.dp), MorrowMuted) },
+                                onClick = { showUserMessageMenu = false; onEdit(message) }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Select text", color = MorrowText) },
+                                leadingIcon = { Icon(Icons.Outlined.SelectAll, contentDescription = null, tint = MorrowMuted, modifier = Modifier.size(18.dp)) },
+                                onClick = { selectingText = true; showUserMessageMenu = false }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Share", color = MorrowText) },
+                                leadingIcon = { ShareIcon(Modifier.size(18.dp), MorrowMuted) },
+                                onClick = { onShare(); showUserMessageMenu = false }
+                            )
+                        }
                     }
-                }
-                if (showUserMessageMenu) {
-                    AlertDialog(
-                        onDismissRequest = { showUserMessageMenu = false },
-                        title = { Text("Your message", color = MorrowText) },
-                        text = {
-                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text("Sent $sentAt", color = MorrowMuted, fontSize = 12.sp)
-                                Spacer(Modifier.height(6.dp))
-                                TextButton(onClick = { onCopy(); showUserMessageMenu = false }, modifier = Modifier.fillMaxWidth()) {
-                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { CopyIcon(Modifier.size(18.dp), MorrowText); Spacer(Modifier.width(12.dp)); Text("Copy message", color = MorrowText) }
-                                }
-                                TextButton(onClick = { selectingText = true; showUserMessageMenu = false }, modifier = Modifier.fillMaxWidth()) {
-                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { ComposeIcon(Modifier.size(18.dp), MorrowText); Spacer(Modifier.width(12.dp)); Text("Select text", color = MorrowText) }
-                                }
-                                TextButton(onClick = { showUserMessageMenu = false; onEdit(message) }, modifier = Modifier.fillMaxWidth()) {
-                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { ComposeIcon(Modifier.size(18.dp), MorrowText); Spacer(Modifier.width(12.dp)); Text("Edit message", color = MorrowText) }
-                                }
-                                TextButton(onClick = { onShare(); showUserMessageMenu = false }, modifier = Modifier.fillMaxWidth()) {
-                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { ShareIcon(Modifier.size(18.dp), MorrowText); Spacer(Modifier.width(12.dp)); Text("Share prompt", color = MorrowText) }
-                                }
-                            }
-                        },
-                        confirmButton = { TextButton(onClick = { showUserMessageMenu = false }) { Text("Done", color = LocalMorrowAccent.current) } },
-                        containerColor = MorrowSurface
-                    )
                 }
             }
         } else {
@@ -1973,16 +2414,6 @@ private fun MorrowMessageRow(
                     ) {
                         if (isTyping) TypewriterMarkdown(text = message.text, skipRequested = typingSkip, onFinished = onTypingDone)
                         else SelectionContainer { MorrowMarkdown(text = message.text) }
-
-                        if (messageTime.isNotBlank()) {
-                            Spacer(Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
-                            ) {
-                                Text(messageTime, color = MorrowMuted.copy(alpha = 0.82f), fontSize = 10.sp)
-                            }
-                        }
                     }
                 }
                 if (!isTyping) {
