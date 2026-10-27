@@ -1527,12 +1527,46 @@ private fun WelcomeHero(
             horizontalAlignment = Alignment.Start,
             verticalArrangement = Arrangement.Center
         ) {
-            MorrowSignatureOrb(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(172.dp)
-            )
-            Spacer(Modifier.height(2.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(bottom = 28.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(
+                            Brush.linearGradient(
+                                listOf(Color(0xFFBBA6F5), Color(0xFF7962C9), Color(0xFF44366F))
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.AutoAwesome,
+                        contentDescription = null,
+                        tint = Color(0xFFF8F4FF),
+                        modifier = Modifier.size(23.dp)
+                    )
+                }
+                Column {
+                    Text(
+                        "Morrow",
+                        color = MorrowText,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = (-0.5).sp
+                    )
+                    Text(
+                        "YOUR SPACE TO THINK",
+                        color = MorrowMuted,
+                        fontSize = 9.sp,
+                        letterSpacing = 1.6.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
             Text(
                 clock.phase.greeting,
                 color = accent,
