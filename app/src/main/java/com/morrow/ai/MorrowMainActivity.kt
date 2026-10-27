@@ -173,9 +173,7 @@ import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
-import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -3012,4 +3010,66 @@ private fun FileIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: 
 @Composable
 private fun CameraIcon(modifier: Modifier = Modifier.size(IconDefaultSize), tint: Color = MorrowText) {
     Icon(imageVector = Icons.Outlined.PhotoCamera, contentDescription = null, modifier = modifier, tint = tint)
+}
+
+private suspend fun fetchMorrowReply(
+    message: String,
+    attachments: List<MorrowAttachment>
+): String = withContext(Dispatchers.IO) {
+    var connection: HttpURLConnection? = null
+    try {
+        connection = (URL(MORROW_CHAT_ENDPOINT).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 20_000
+            readTimeout = 60_000
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            setRequestProperty("Accept", "application/json")
+        }
+
+        val body = JSONObject().put("message", message)
+        if (attachments.isNotEmpty()) {
+            val array = JSONArray()
+            attachments.forEach { a ->
+                val item = JSONObject()
+                    .put("name", a.name)
+                    .put("mime", a.mime)
+                    .put("kind", if (a.isImage) "image" else "file")
+                a.payload?.let { item.put("data", it) }
+                array.put(item)
+            }
+            body.put("attachments", array)
+        }
+
+        connection.outputStream.use { output ->
+            output.write(body.toString().toByteArray(Charsets.UTF_8))
+        }
+
+        val statusCode = connection.responseCode
+        val responseBody = (if (statusCode in 200..299) connection.inputStream else connection.errorStream)
+            ?.bufferedReader(Charsets.UTF_8)
+            ?.use { it.readText() }
+            ?: ""
+
+        val json = try {
+            JSONObject(responseBody)
+        } catch (_: Exception) {
+            JSONObject()
+        }
+
+        if (statusCode !in 200..299) {
+            val detail = json.optString("error").ifBlank { "HTTP $statusCode" }
+            throw IOException(detail)
+        }
+
+        json.optString("reply").takeIf { it.isNotBlank() }
+            ?: throw IOException("The server returned an empty reply.")
+    } catch (error: CancellationException) {
+        // Stop button pressed: let the coroutine cancel instead of showing an error message.
+        throw error
+    } catch (error: Exception) {
+        "I couldn't connect to Morrow right now. ${error.message ?: "Please try again."}"
+    } finally {
+        connection?.disconnect()
+    }
 }
