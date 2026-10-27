@@ -2837,23 +2837,161 @@ private fun AttachmentChip(attachment: MorrowAttachment, onRemove: (() -> Unit)?
 private fun AttachmentPanel(
     onPhotos: () -> Unit,
     onFiles: () -> Unit,
-    onCamera: () -> Unit
+    onCamera: () -> Unit,
+    onVoice: () -> Unit,
+    onUnsupportedTool: () -> Unit,
+    onMore: () -> Unit
+) {
+    ToolsAndAttachmentsContent(
+        modifier = Modifier.fillMaxWidth().heightIn(max = 540.dp),
+        showPageTitle = false,
+        onClose = null,
+        onPhotos = onPhotos,
+        onFiles = onFiles,
+        onCamera = onCamera,
+        onVoice = onVoice,
+        onUnsupportedTool = onUnsupportedTool,
+        onMore = onMore
+    )
+}
+
+@Composable
+private fun ToolsScreen(
+    onBack: () -> Unit,
+    onPhotos: () -> Unit,
+    onFiles: () -> Unit,
+    onCamera: () -> Unit,
+    onVoice: () -> Unit,
+    onUnsupportedTool: () -> Unit
+) {
+    ToolsAndAttachmentsContent(
+        modifier = Modifier.fillMaxSize().background(MorrowBackground),
+        showPageTitle = true,
+        onClose = onBack,
+        onPhotos = onPhotos,
+        onFiles = onFiles,
+        onCamera = onCamera,
+        onVoice = onVoice,
+        onUnsupportedTool = onUnsupportedTool,
+        onMore = onUnsupportedTool
+    )
+}
+
+@Composable
+private fun ToolsAndAttachmentsContent(
+    modifier: Modifier = Modifier,
+    showPageTitle: Boolean,
+    onClose: (() -> Unit)?,
+    onPhotos: () -> Unit,
+    onFiles: () -> Unit,
+    onCamera: () -> Unit,
+    onVoice: () -> Unit,
+    onUnsupportedTool: () -> Unit,
+    onMore: () -> Unit
 ) {
     val accent = LocalMorrowAccent.current
-    Row(
-        modifier = Modifier
+    val cardShape = RoundedCornerShape(22.dp)
+    Column(
+        modifier = modifier
             .fillMaxWidth()
-            .padding(bottom = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+            .clip(cardShape)
+            .background(Color(0xFF111522))
+            .border(1.dp, MorrowBorder.copy(alpha = 0.85f), cardShape)
+            .padding(14.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        AttachOption(label = "Photos", onClick = onPhotos, modifier = Modifier.weight(1f)) {
-            PhotoIcon(modifier = Modifier.size(22.dp), tint = accent)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                if (showPageTitle) "Tools & Attachments" else "Attach",
+                color = MorrowText,
+                fontSize = if (showPageTitle) 19.sp else 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f)
+            )
+            if (onClose != null) {
+                IconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
+                    CloseIcon(modifier = Modifier.size(21.dp), tint = MorrowMuted)
+                }
+            } else {
+                IconButton(
+                    onClick = { /* handled by the composer's plus toggle */ },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    // A visual close affordance for the embedded panel; no separate state is owned here.
+                    CloseIcon(modifier = Modifier.size(21.dp), tint = MorrowMuted)
+                }
+            }
         }
-        AttachOption(label = "Files", onClick = onFiles, modifier = Modifier.weight(1f)) {
-            FileIcon(modifier = Modifier.size(22.dp), tint = accent)
+
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                AttachOption(
+                    label = "Photos", subtitle = "Gallery",
+                    modifier = Modifier.weight(1f),
+                    onClick = onPhotos
+                ) { PhotoIcon(Modifier.size(25.dp), accent) }
+                AttachOption(
+                    label = "Camera", subtitle = "Take a photo",
+                    modifier = Modifier.weight(1f),
+                    onClick = onCamera
+                ) { CameraIcon(Modifier.size(25.dp), accent) }
+                AttachOption(
+                    label = "Files", subtitle = "Document",
+                    modifier = Modifier.weight(1f),
+                    onClick = onFiles
+                ) { FileIcon(Modifier.size(25.dp), accent) }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                AttachOption(
+                    label = "Voice", subtitle = "Record audio",
+                    modifier = Modifier.weight(1f),
+                    onClick = onVoice
+                ) { MicIcon(Modifier.size(25.dp), accent) }
+                AttachOption(
+                    label = "Web Search", subtitle = "Browse",
+                    modifier = Modifier.weight(1f),
+                    onClick = onUnsupportedTool
+                ) { Icon(Icons.Outlined.Language, contentDescription = null, tint = accent, modifier = Modifier.size(25.dp)) }
+                AttachOption(
+                    label = "More", subtitle = "Apps",
+                    modifier = Modifier.weight(1f),
+                    onClick = onMore
+                ) { Icon(Icons.Outlined.MoreHoriz, contentDescription = null, tint = accent, modifier = Modifier.size(25.dp)) }
+            }
         }
-        AttachOption(label = "Camera", onClick = onCamera, modifier = Modifier.weight(1f)) {
-            CameraIcon(modifier = Modifier.size(22.dp), tint = accent)
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(21.dp))
+                .background(Color(0xFF151927))
+                .border(1.dp, MorrowBorder.copy(alpha = 0.8f), RoundedCornerShape(21.dp))
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp)
+        ) {
+            Text("Quick Tools", color = MorrowText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            QuickToolRow(
+                title = "Image Generator",
+                subtitle = "Create images with AI",
+                icon = { Icon(Icons.Outlined.Image, contentDescription = null, tint = accent, modifier = Modifier.size(24.dp)) },
+                onClick = onUnsupportedTool
+            )
+            QuickToolRow(
+                title = "Code Interpreter",
+                subtitle = "Run and explain code",
+                icon = { Icon(Icons.Outlined.Code, contentDescription = null, tint = accent, modifier = Modifier.size(24.dp)) },
+                onClick = onUnsupportedTool
+            )
+            QuickToolRow(
+                title = "Web Search",
+                subtitle = "Get real-time information",
+                icon = { Icon(Icons.Outlined.Search, contentDescription = null, tint = accent, modifier = Modifier.size(24.dp)) },
+                onClick = onUnsupportedTool
+            )
         }
     }
 }
@@ -2861,30 +2999,64 @@ private fun AttachmentPanel(
 @Composable
 private fun AttachOption(
     label: String,
-    onClick: () -> Unit,
+    subtitle: String,
     modifier: Modifier = Modifier,
+    onClick: () -> Unit,
     icon: @Composable () -> Unit
 ) {
+    val shape = RoundedCornerShape(20.dp)
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(MorrowSurface)
-            .border(1.dp, MorrowBorder, RoundedCornerShape(18.dp))
+            .heightIn(min = 112.dp)
+            .clip(shape)
+            .background(Color(0xFF151A2A))
+            .border(1.dp, MorrowBorder.copy(alpha = 0.85f), shape)
             .clickable(onClick = onClick)
-            .padding(vertical = 14.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(horizontal = 4.dp, vertical = 13.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
         Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(MorrowChipFill),
+            modifier = Modifier.size(44.dp),
             contentAlignment = Alignment.Center
         ) {
             icon()
         }
-        Spacer(Modifier.height(8.dp))
-        Text(label, color = MorrowText, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        Spacer(Modifier.height(6.dp))
+        Text(label, color = MorrowText, fontSize = 12.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center, maxLines = 1)
+        Spacer(Modifier.height(3.dp))
+        Text(subtitle, color = MorrowMuted, fontSize = 10.sp, textAlign = TextAlign.Center, maxLines = 2, lineHeight = 13.sp)
+    }
+}
+
+@Composable
+private fun QuickToolRow(
+    title: String,
+    subtitle: String,
+    icon: @Composable () -> Unit,
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(18.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(Color(0xFF111624))
+            .border(1.dp, MorrowBorder.copy(alpha = 0.75f), shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(15.dp)).background(Color(0xFF292343)),
+            contentAlignment = Alignment.Center
+        ) { icon() }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = MorrowText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(4.dp))
+            Text(subtitle, color = MorrowMuted, fontSize = 11.sp)
+        }
     }
 }
 
