@@ -3286,6 +3286,7 @@ private fun prepareAttachment(context: Context, uri: Uri): MorrowAttachment? {
     return MorrowAttachment(name = name, mime = mime, isImage = false, payload = text)
 }
 
+// Live web search, image generation, and code execution are placeholders until backend endpoints exist.
 // ---------- Composer ----------
 
 @Composable
