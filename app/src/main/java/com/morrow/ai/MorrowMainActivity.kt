@@ -2838,6 +2838,7 @@ private fun AttachmentPanel(
     onPhotos: () -> Unit,
     onFiles: () -> Unit,
     onCamera: () -> Unit,
+    onClose: () -> Unit,
     onVoice: () -> Unit,
     onUnsupportedTool: () -> Unit,
     onMore: () -> Unit
@@ -2845,7 +2846,7 @@ private fun AttachmentPanel(
     ToolsAndAttachmentsContent(
         modifier = Modifier.fillMaxWidth().heightIn(max = 540.dp),
         showPageTitle = false,
-        onClose = null,
+        onClose = onClose,
         onPhotos = onPhotos,
         onFiles = onFiles,
         onCamera = onCamera,
@@ -2865,8 +2866,8 @@ private fun ToolsScreen(
     onUnsupportedTool: () -> Unit
 ) {
     ToolsAndAttachmentsContent(
-        modifier = Modifier.fillMaxSize().background(MorrowBackground),
-        showPageTitle = true,
+        modifier = Modifier.fillMaxSize().background(MorrowBackground).statusBarsPadding().navigationBarsPadding(),
+        showPageTitle = false,
         onClose = onBack,
         onPhotos = onPhotos,
         onFiles = onFiles,
@@ -2914,14 +2915,6 @@ private fun ToolsAndAttachmentsContent(
             )
             if (onClose != null) {
                 IconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
-                    CloseIcon(modifier = Modifier.size(21.dp), tint = MorrowMuted)
-                }
-            } else {
-                IconButton(
-                    onClick = { /* handled by the composer's plus toggle */ },
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    // A visual close affordance for the embedded panel; no separate state is owned here.
                     CloseIcon(modifier = Modifier.size(21.dp), tint = MorrowMuted)
                 }
             }
@@ -3361,6 +3354,7 @@ private fun MorrowComposer(
                 onPhotos = onPickPhotos,
                 onFiles = onPickFiles,
                 onCamera = onCamera,
+                onClose = onToggleAttachments,
                 onVoice = {
                     onToggleAttachments()
                     voice.toggle()
