@@ -616,6 +616,18 @@ private fun MorrowMainScreen() {
     var showChats by remember { mutableStateOf(false) }
     var showTools by remember { mutableStateOf(false) }
     var showToolInfoDialog by remember { mutableStateOf(false) }
+    var activeTool by remember { mutableStateOf("Web Search") }
+    var toolPrompt by remember { mutableStateOf("") }
+    var toolResult by remember { mutableStateOf("") }
+    var toolLoading by remember { mutableStateOf(false) }
+    var toolImage by remember { mutableStateOf<Bitmap?>(null) }
+    val openTool: (String) -> Unit = { name ->
+        activeTool = name
+        toolPrompt = ""
+        toolResult = ""
+        toolImage = null
+        showToolInfoDialog = true
+    }
     var showSettings by remember { mutableStateOf(false) }
     var showExplore by remember { mutableStateOf(false) }
     var showLibrary by remember { mutableStateOf(false) }
@@ -1148,7 +1160,8 @@ private fun MorrowMainScreen() {
                         createNewChat()
                         voice.toggle()
                     },
-                    onUnsupportedTool = { showToolInfoDialog = true }
+                    onUnsupportedTool = { showToolInfoDialog = true },
+                    onRunTool = openTool
                 )
             } else if (showExplore) {
                 ExploreScreen(
@@ -1400,17 +1413,80 @@ private fun MorrowMainScreen() {
 
         if (showToolInfoDialog) {
             AlertDialog(
-                onDismissRequest = { showToolInfoDialog = false },
+                onDismissRequest = { if (!toolLoading) showToolInfoDialog = false },
                 containerColor = MorrowSurface,
-                title = { Text("Tool availability", color = MorrowText) },
+                title = { Text(activeTool, color = MorrowText) },
                 text = {
-                    Text(
-                        "Photos, camera, files, and voice input use features already built into Morrow. Live web search, image generation, and code execution need backend support that is not connected yet.",
-                        color = MorrowMuted
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = toolPrompt,
+                            onValueChange = { toolPrompt = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !toolLoading,
+                            label = { Text(if (activeTool == "Image Generator") "Describe the image" else if (activeTool == "Code Interpreter") "Describe the task or paste code" else "What should I search?") },
+                            minLines = 2,
+                            maxLines = 5
+                        )
+                        if (toolLoading) Text("Working…", color = MorrowMuted)
+                        if (toolResult.isNotBlank()) SelectionContainer { Text(toolResult, color = MorrowText) }
+                        toolImage?.let { bitmap ->
+                            Image(bitmap = bitmap.asImageBitmap(), contentDescription = "Generated image", modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp))
+                        }
+                    }
                 },
                 confirmButton = {
-                    TextButton(onClick = { showToolInfoDialog = false }) { Text("Got it", color = LocalMorrowAccent.current) }
+                    TextButton(enabled = !toolLoading && toolPrompt.isNotBlank(), onClick = {
+                        toolLoading = true
+                        toolResult = ""
+                        toolImage = null
+                        val prompt = toolPrompt.trim()
+                        val tool = activeTool
+                        scope.launch {
+                            try {
+                                val result = withContext(Dispatchers.IO) {
+                                    val route = when (tool) {
+                                        "Web Search" -> "/web-search"
+                                        "Image Generator" -> "/image-generation"
+                                        else -> "/code-interpreter"
+                                    }
+                                    val connection = URL("https://morrow-backend.prasunmukherjeeee28.workers.dev" + route).openConnection() as HttpURLConnection
+                                    try {
+                                        connection.requestMethod = "POST"
+                                        connection.connectTimeout = 20000
+                                        connection.readTimeout = 90000
+                                        connection.doOutput = true
+                                        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                                        val body = JSONObject().put("message", prompt).put("prompt", prompt).put("code", prompt)
+                                        connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                                        val status = connection.responseCode
+                                        val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+                                        val raw = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                                        if (status !in 200..299) throw IOException("HTTP $status: " + raw.take(400))
+                                        JSONObject(raw)
+                                    } finally {
+                                        connection.disconnect()
+                                    }
+                                }
+                                val imageData = result.optString("imageBase64")
+                                if (tool == "Image Generator" && imageData.isNotBlank()) {
+                                    val bytes = Base64.decode(imageData, Base64.DEFAULT)
+                                    toolImage = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                    toolResult = if (toolImage == null) "The returned image could not be decoded." else "Image generated."
+                                } else {
+                                    toolResult = sequenceOf("reply", "response", "output_text", "result", "content", "text")
+                                        .map { result.optString(it) }
+                                        .firstOrNull { it.isNotBlank() && it != "null" } ?: result.toString(2)
+                                }
+                            } catch (e: Exception) {
+                                toolResult = "Couldn't complete $tool. ${e.message ?: "Unknown error"}"
+                            } finally {
+                                toolLoading = false
+                            }
+                        }
+                    }) { Text(if (toolLoading) "Running…" else "Run", color = LocalMorrowAccent.current) }
+                },
+                dismissButton = {
+                    TextButton(enabled = !toolLoading, onClick = { showToolInfoDialog = false }) { Text("Close", color = MorrowMuted) }
                 }
             )
         }
@@ -2834,7 +2910,8 @@ private fun AttachmentPanel(
     onClose: () -> Unit,
     onVoice: () -> Unit,
     onUnsupportedTool: () -> Unit,
-    onMore: () -> Unit
+    onMore: () -> Unit,
+    onRunTool: (String) -> Unit = { onUnsupportedTool() }
 ) {
     ToolsAndAttachmentsContent(
         modifier = Modifier.fillMaxWidth().heightIn(max = 540.dp),
@@ -2845,7 +2922,8 @@ private fun AttachmentPanel(
         onCamera = onCamera,
         onVoice = onVoice,
         onUnsupportedTool = onUnsupportedTool,
-        onMore = onMore
+        onMore = onMore,
+        onRunTool = onRunTool
     )
 }
 
@@ -2856,7 +2934,8 @@ private fun ToolsScreen(
     onFiles: () -> Unit,
     onCamera: () -> Unit,
     onVoice: () -> Unit,
-    onUnsupportedTool: () -> Unit
+    onUnsupportedTool: () -> Unit,
+    onRunTool: (String) -> Unit = { onUnsupportedTool() }
 ) {
     ToolsAndAttachmentsContent(
         modifier = Modifier.fillMaxSize().background(MorrowBackground).statusBarsPadding().navigationBarsPadding(),
@@ -2867,7 +2946,8 @@ private fun ToolsScreen(
         onCamera = onCamera,
         onVoice = onVoice,
         onUnsupportedTool = onUnsupportedTool,
-        onMore = onUnsupportedTool
+        onMore = onUnsupportedTool,
+        onRunTool = onRunTool
     )
 }
 
@@ -2881,7 +2961,8 @@ private fun ToolsAndAttachmentsContent(
     onCamera: () -> Unit,
     onVoice: () -> Unit,
     onUnsupportedTool: () -> Unit,
-    onMore: () -> Unit
+    onMore: () -> Unit,
+    onRunTool: (String) -> Unit = { onUnsupportedTool() }
 ) {
     val accent = LocalMorrowAccent.current
     val cardShape = RoundedCornerShape(22.dp)
@@ -2940,7 +3021,7 @@ private fun ToolsAndAttachmentsContent(
                 AttachOption(
                     label = "Web Search", subtitle = "Browse",
                     modifier = Modifier.weight(1f),
-                    onClick = onUnsupportedTool
+                    onClick = { onRunTool("Web Search") }
                 ) { Icon(Icons.Outlined.Language, contentDescription = null, tint = accent, modifier = Modifier.size(25.dp)) }
                 AttachOption(
                     label = "More", subtitle = "Apps",
@@ -2964,19 +3045,19 @@ private fun ToolsAndAttachmentsContent(
                 title = "Image Generator",
                 subtitle = "Create images with AI",
                 icon = { Icon(Icons.Outlined.Image, contentDescription = null, tint = accent, modifier = Modifier.size(24.dp)) },
-                onClick = onUnsupportedTool
+                onClick = { onRunTool("Image Generator") }
             )
             QuickToolRow(
                 title = "Code Interpreter",
                 subtitle = "Run and explain code",
                 icon = { Icon(Icons.Outlined.Code, contentDescription = null, tint = accent, modifier = Modifier.size(24.dp)) },
-                onClick = onUnsupportedTool
+                onClick = { onRunTool("Code Interpreter") }
             )
             QuickToolRow(
                 title = "Web Search",
                 subtitle = "Get real-time information",
                 icon = { Icon(Icons.Outlined.Search, contentDescription = null, tint = accent, modifier = Modifier.size(24.dp)) },
-                onClick = onUnsupportedTool
+                onClick = { onRunTool("Web Search") }
             )
         }
     }
