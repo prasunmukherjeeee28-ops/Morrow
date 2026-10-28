@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -13,6 +14,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
+import android.provider.MediaStore
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -621,6 +623,7 @@ private fun MorrowMainScreen() {
     var toolResult by remember { mutableStateOf("") }
     var toolLoading by remember { mutableStateOf(false) }
     var toolImage by remember { mutableStateOf<Bitmap?>(null) }
+    var showImagePreview by remember { mutableStateOf(false) }
     val openTool: (String) -> Unit = { name ->
         activeTool = name
         toolPrompt = ""
@@ -1398,10 +1401,56 @@ private fun MorrowMainScreen() {
                             minLines = 2,
                             maxLines = 5
                         )
-                        if (toolLoading) Text("Working…", color = MorrowMuted)
+                        if (toolLoading) ToolSnakeLoading()
                         if (toolResult.isNotBlank()) SelectionContainer { Text(toolResult, color = MorrowText) }
                         toolImage?.let { bitmap ->
-                            Image(bitmap = bitmap.asImageBitmap(), contentDescription = "Generated image", modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp))
+                            Image(
+                                bitmap = bitmap.asImageBitmap(),
+                                contentDescription = "Generated image — tap to preview",
+                                modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp)
+                                    .clip(RoundedCornerShape(14.dp)).clickable { showImagePreview = true }
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(onClick = {
+                                    try {
+                                        val values = ContentValues().apply {
+                                            put(MediaStore.Images.Media.DISPLAY_NAME, "Morrow-${System.currentTimeMillis()}.png")
+                                            put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                                            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Morrow")
+                                        }
+                                        val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                                            ?: throw IOException("Couldn't create image file")
+                                        context.contentResolver.openOutputStream(uri)?.use {
+                                            if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) throw IOException("Image encoding failed")
+                                        } ?: throw IOException("Couldn't open image file")
+                                        Toast.makeText(context, "Image saved to Pictures/Morrow", Toast.LENGTH_SHORT).show()
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Save failed: ${e.message}", Toast.LENGTH_LONG).show()
+                                    }
+                                }) { Text("Save image", color = LocalMorrowAccent.current) }
+                                TextButton(onClick = {
+                                    try {
+                                        val values = ContentValues().apply {
+                                            put(MediaStore.Images.Media.DISPLAY_NAME, "Morrow-share-${System.currentTimeMillis()}.png")
+                                            put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                                            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Morrow")
+                                        }
+                                        val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                                            ?: throw IOException("Couldn't prepare image to share")
+                                        context.contentResolver.openOutputStream(uri)?.use {
+                                            if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) throw IOException("Image encoding failed")
+                                        } ?: throw IOException("Couldn't write image")
+                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "image/png"
+                                            putExtra(Intent.EXTRA_STREAM, uri)
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        context.startActivity(Intent.createChooser(shareIntent, "Share generated image"))
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Share failed: ${e.message}", Toast.LENGTH_LONG).show()
+                                    }
+                                }) { Text("Share image", color = LocalMorrowAccent.current) }
+                            }
                         }
                     }
                 },
@@ -1458,6 +1507,65 @@ private fun MorrowMainScreen() {
                 },
                 dismissButton = {
                     TextButton(enabled = !toolLoading, onClick = { showToolInfoDialog = false }) { Text("Close", color = MorrowMuted) }
+                }
+            )
+        }
+
+        if (showImagePreview && toolImage != null) {
+            AlertDialog(
+                onDismissRequest = { showImagePreview = false },
+                containerColor = MorrowSurface,
+                title = { Text("Generated image", color = MorrowText) },
+                text = {
+                    Image(
+                        bitmap = toolImage!!.asImageBitmap(),
+                        contentDescription = "Full-size generated image",
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp)
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val bitmap = toolImage ?: return@TextButton
+                        try {
+                            val values = ContentValues().apply {
+                                put(MediaStore.Images.Media.DISPLAY_NAME, "Morrow-${System.currentTimeMillis()}.png")
+                                put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Morrow")
+                            }
+                            val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                                ?: throw IOException("Couldn't create image file")
+                            context.contentResolver.openOutputStream(uri)?.use {
+                                if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) throw IOException("Image encoding failed")
+                            } ?: throw IOException("Couldn't open image file")
+                            Toast.makeText(context, "Image saved to Pictures/Morrow", Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Save failed: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }) { Text("Save", color = LocalMorrowAccent.current) }
+                    TextButton(onClick = {
+                        val bitmap = toolImage ?: return@TextButton
+                        try {
+                            val values = ContentValues().apply {
+                                put(MediaStore.Images.Media.DISPLAY_NAME, "Morrow-share-${System.currentTimeMillis()}.png")
+                                put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Morrow")
+                            }
+                            val uri = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                                ?: throw IOException("Couldn't prepare image to share")
+                            context.contentResolver.openOutputStream(uri)?.use {
+                                if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) throw IOException("Image encoding failed")
+                            } ?: throw IOException("Couldn't write image")
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "image/png"
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Share generated image"))
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Share failed: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }) { Text("Share", color = LocalMorrowAccent.current) }
+                    TextButton(onClick = { showImagePreview = false }) { Text("Close", color = MorrowMuted) }
                 }
             )
         }
@@ -3031,6 +3139,40 @@ private fun ToolsAndAttachmentsContent(
                 onClick = { onRunTool("Web Search") }
             )
         }
+    }
+}
+
+@Composable
+private fun ToolSnakeLoading() {
+    val accent = LocalMorrowAccent.current
+    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "toolSnake")
+    val progress by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 99f,
+        animationSpec = infiniteRepeatable(tween(18000, easing = LinearEasing), RepeatMode.Restart),
+        label = "toolProgress"
+    )
+    val head = (progress / 100f * 12).toInt().coerceIn(0, 11)
+    Column(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+            .background(Color(0xFF0D111D)).border(1.dp, MorrowBorder, RoundedCornerShape(16.dp)).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Morrow is working", color = MorrowText, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text("${progress.toInt()}%", color = accent, fontWeight = FontWeight.Bold)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+            (0 until 12).forEach { index ->
+                val distance = head - index
+                val isSnake = distance in 0..3
+                Box(
+                    modifier = Modifier.weight(1f).height(15.dp).clip(RoundedCornerShape(4.dp))
+                        .background(if (index == head) accent else if (isSnake) accent.copy(alpha = 0.42f) else MorrowBorder.copy(alpha = 0.45f))
+                )
+            }
+        }
+        Text("Preparing your result…", color = MorrowMuted, fontSize = 12.sp)
     }
 }
 
