@@ -162,6 +162,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
@@ -4387,8 +4388,50 @@ private fun MorrowSplash(onDone: () -> Unit) {
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            MorrowOrb(Modifier.size(220.dp))
-            Spacer(Modifier.height(36.dp))
+            val orbMotion = rememberInfiniteTransition(label = "splashOrbMotion")
+            val spin by orbMotion.animateFloat(
+                initialValue = 0f,
+                targetValue = 360f,
+                animationSpec = infiniteRepeatable(tween(durationMillis = 24000, easing = LinearEasing)),
+                label = "splashOrbSpin"
+            )
+            val breathe by orbMotion.animateFloat(
+                initialValue = 0.95f,
+                targetValue = 1.05f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 2800, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "splashOrbBreathe"
+            )
+            Box(modifier = Modifier.size(320.dp), contentAlignment = Alignment.Center) {
+                Image(
+                    painter = painterResource(R.drawable.morrow_orb),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            rotationZ = spin
+                            scaleX = breathe
+                            scaleY = breathe
+                        }
+                )
+                Image(
+                    painter = painterResource(R.drawable.morrow_orb),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            rotationZ = -spin * 1.6f
+                            alpha = 0.45f
+                            scaleX = 2f - breathe
+                            scaleY = 2f - breathe
+                        }
+                )
+            }
+            Spacer(Modifier.height(20.dp))
             Text("Morrow AI", color = MorrowText, fontSize = 34.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.height(10.dp))
             Text("Your thoughts. Amplified.", color = MorrowMuted, fontSize = 15.sp)
