@@ -22,6 +22,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Base64
 import android.widget.Toast
+import android.widget.VideoView
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -167,6 +168,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -4609,13 +4611,32 @@ private fun MorrowOrb(modifier: Modifier = Modifier) {
 
 @Composable
 private fun MorrowSplash(onDone: () -> Unit) {
+    val context = LocalContext.current
     val accent = LocalMorrowAccent.current
     val progress = remember { Animatable(0f) }
+    val videoView = remember(context) {
+        VideoView(context).apply {
+            setVideoURI(Uri.parse("android.resource://${context.packageName}/${R.raw.morrow_orb}"))
+            setOnPreparedListener { player ->
+                player.isLooping = true
+                player.setVolume(0f, 0f)
+                start()
+            }
+        }
+    }
+
+    DisposableEffect(videoView) {
+        onDispose {
+            videoView.stopPlayback()
+        }
+    }
+
     LaunchedEffect(Unit) {
-        progress.animateTo(1f, tween(durationMillis = 1600, easing = LinearEasing))
+        progress.animateTo(1f, tween(durationMillis = 3000, easing = LinearEasing))
         delay(150)
         onDone()
     }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -4623,49 +4644,13 @@ private fun MorrowSplash(onDone: () -> Unit) {
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            val orbMotion = rememberInfiniteTransition(label = "splashOrbMotion")
-            val spin by orbMotion.animateFloat(
-                initialValue = 0f,
-                targetValue = 360f,
-                animationSpec = infiniteRepeatable(tween(durationMillis = 24000, easing = LinearEasing)),
-                label = "splashOrbSpin"
+            AndroidView(
+                factory = { videoView },
+                modifier = Modifier.size(320.dp),
+                update = { view ->
+                    if (!view.isPlaying) view.start()
+                }
             )
-            val breathe by orbMotion.animateFloat(
-                initialValue = 0.95f,
-                targetValue = 1.05f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 2800, easing = FastOutSlowInEasing),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "splashOrbBreathe"
-            )
-            Box(modifier = Modifier.size(320.dp), contentAlignment = Alignment.Center) {
-                Image(
-                    painter = painterResource(R.drawable.morrow_orb),
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            rotationZ = spin
-                            scaleX = breathe
-                            scaleY = breathe
-                        }
-                )
-                Image(
-                    painter = painterResource(R.drawable.morrow_orb),
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            rotationZ = -spin * 1.6f
-                            alpha = 0.45f
-                            scaleX = 2f - breathe
-                            scaleY = 2f - breathe
-                        }
-                )
-            }
             Spacer(Modifier.height(20.dp))
             Text("Morrow AI", color = MorrowText, fontSize = 34.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.height(10.dp))
