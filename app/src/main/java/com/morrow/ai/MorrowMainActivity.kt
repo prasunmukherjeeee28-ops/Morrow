@@ -1015,15 +1015,6 @@ private fun MorrowMainScreen() {
                         }
                         Spacer(Modifier.height(4.dp))
                         SidebarAction(
-                            icon = { Icon(Icons.Outlined.Widgets, contentDescription = null, tint = if (showTools) accent else MorrowMuted, modifier = Modifier.size(22.dp)) },
-                            label = "Tools",
-                            selected = showTools
-                        ) {
-                            navigateHomeTab("Tools")
-                            scope.launch { drawerState.close() }
-                        }
-                        Spacer(Modifier.height(4.dp))
-                        SidebarAction(
                             icon = { Icon(Icons.Outlined.Settings, contentDescription = null, tint = if (showSettings) accent else MorrowMuted, modifier = Modifier.size(22.dp)) },
                             label = "Settings",
                             selected = showSettings
@@ -1039,30 +1030,6 @@ private fun MorrowMainScreen() {
                             fontWeight = FontWeight.Medium,
                             modifier = Modifier.padding(start = 6.dp, top = 22.dp, bottom = 8.dp)
                         )
-                        SidebarAction(
-                            icon = { Icon(Icons.Outlined.Image, contentDescription = null, tint = MorrowMuted, modifier = Modifier.size(22.dp)) },
-                            label = "Generate Image"
-                        ) {
-                            showToolInfoDialog = true
-                            scope.launch { drawerState.close() }
-                        }
-                        Spacer(Modifier.height(2.dp))
-                        SidebarAction(
-                            icon = { Icon(Icons.Outlined.Public, contentDescription = null, tint = MorrowMuted, modifier = Modifier.size(22.dp)) },
-                            label = "Web Search"
-                        ) {
-                            showToolInfoDialog = true
-                            scope.launch { drawerState.close() }
-                        }
-                        Spacer(Modifier.height(2.dp))
-                        SidebarAction(
-                            icon = { Icon(Icons.Outlined.Code, contentDescription = null, tint = MorrowMuted, modifier = Modifier.size(22.dp)) },
-                            label = "Code Interpreter"
-                        ) {
-                            showToolInfoDialog = true
-                            scope.launch { drawerState.close() }
-                        }
-                        Spacer(Modifier.height(2.dp))
                         SidebarAction(
                             icon = { MicIcon(modifier = Modifier.size(22.dp), tint = MorrowMuted) },
                             label = "Voice Chat"
@@ -1312,6 +1279,10 @@ private fun MorrowMainScreen() {
                         onUnsupportedTool = {
                             attachmentsOpen = false
                             showToolInfoDialog = true
+                        },
+                        onRunTool = { name ->
+                            attachmentsOpen = false
+                            openTool(name)
                         }
                     )
                     Text(
@@ -3379,10 +3350,12 @@ private fun MorrowComposer(
     onRemoveAttachment: (Int) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
-    onUnsupportedTool: () -> Unit
+    onUnsupportedTool: () -> Unit,
+    onRunTool: (String) -> Unit = { onUnsupportedTool() }
 ) {
     val accent = LocalMorrowAccent.current
     var focused by remember { mutableStateOf(false) }
+    val showPluginMenu = inputText.substringAfterLast(' ', inputText).endsWith("@") || inputText.endsWith("@")
     val busy = isLoading || isTyping
     val canSend = (inputText.isNotBlank() || attachments.isNotEmpty()) && !busy
 
@@ -3419,6 +3392,45 @@ private fun MorrowComposer(
                     AttachmentChip(
                         attachment = attachment,
                         onRemove = { onRemoveAttachment(index) }
+                    )
+                }
+            }
+        }
+
+        if (showPluginMenu && !busy) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                    .clip(RoundedCornerShape(18.dp)).background(MorrowSurface)
+                    .border(1.dp, MorrowBorder, RoundedCornerShape(18.dp)).padding(8.dp)
+            ) {
+                Text("PLUGINS", color = MorrowMuted, fontSize = 10.sp, letterSpacing = 1.4.sp,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp))
+                listOf("Web Search", "Image Generator", "Code Interpreter").forEach { plugin ->
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(plugin, color = MorrowText, fontSize = 14.sp)
+                                Text(when (plugin) {
+                                    "Web Search" -> "Search the web"
+                                    "Image Generator" -> "Generate an image"
+                                    else -> "Run code or calculate"
+                                }, color = MorrowMuted, fontSize = 11.sp)
+                            }
+                        },
+                        onClick = {
+                            onTextChanged(inputText.dropLastWhile { it.isWhitespace() }.dropLast(1).trimEnd())
+                            onRunTool(plugin)
+                        },
+                        leadingIcon = {
+                            Icon(
+                                when (plugin) {
+                                    "Web Search" -> Icons.Outlined.Search
+                                    "Image Generator" -> Icons.Outlined.Image
+                                    else -> Icons.Outlined.Code
+                                },
+                                contentDescription = null, tint = accent
+                            )
+                        }
                     )
                 }
             }
