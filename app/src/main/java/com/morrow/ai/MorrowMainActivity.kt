@@ -3518,7 +3518,7 @@ private fun MorrowComposer(
 
             Spacer(Modifier.width(4.dp))
             if (busy) {
-                MorrowAnimatedMorrowAnimatedIconButton(
+                MorrowAnimatedIconButton(
                     onClick = onStop,
                     modifier = Modifier
                         .size(40.dp)
