@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Keep the original animated-vector Morrow launch animation. -->
+    <!-- Show the original orb as the system launch placeholder; Compose plays its animated-vector immediately after. -->
     <style name="Theme.Morrow" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/morrow_bg</item>
         <item name="android:windowSplashScreenBackground">@color/morrow_bg</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/morrow_splash_icon_animated</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/morrow_splash_icon_vector</item>
         <item name="android:windowSplashScreenAnimationDuration">850</item>
     </style>
 </resources>
