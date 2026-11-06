@@ -19,6 +19,7 @@ import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Base64
+import android.widget.ImageView
 import android.widget.Toast
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -164,6 +165,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
@@ -639,7 +641,7 @@ private fun MorrowMainScreen() {
     var showLibrary by remember { mutableStateOf(false) }
     var showAppearance by remember { mutableStateOf(false) }
     var showPrivacyDialog by remember { mutableStateOf(false) }
-    var showSplash by remember { mutableStateOf(false) }
+    var showSplash by remember { mutableStateOf(!morrowSplashShown) }
     var showProDialog by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
     var chatActionsId by remember { mutableStateOf<String?>(null) }
@@ -1111,7 +1113,7 @@ private fun MorrowMainScreen() {
             }
         ) {
             if (showSplash) {
-                MorrowSplash(onDone = {
+                MorrowOrbLaunchSplash(onDone = {
                     morrowSplashShown = true
                     showSplash = false
                 })
@@ -4468,86 +4470,32 @@ private fun MorrowOrb(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun MorrowSplash(onDone: () -> Unit) {
-    val accent = LocalMorrowAccent.current
-    val progress = remember { Animatable(0f) }
+private fun MorrowOrbLaunchSplash(onDone: () -> Unit) {
+    val context = LocalContext.current
+
+    // The original Saturn orb animated-vector is played inside the app rather
+    // than relying on Android's system splash to run the vector animation.
     LaunchedEffect(Unit) {
-        progress.animateTo(1f, tween(durationMillis = 1600, easing = LinearEasing))
-        delay(150)
+        delay(1_200)
         onDone()
     }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF0B0A1E), Color(0xFF080A16), Color(0xFF0A0820)))),
+            .background(MorrowBackground),
         contentAlignment = Alignment.Center
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            val orbMotion = rememberInfiniteTransition(label = "splashOrbMotion")
-            val spin by orbMotion.animateFloat(
-                initialValue = 0f,
-                targetValue = 360f,
-                animationSpec = infiniteRepeatable(tween(durationMillis = 24000, easing = LinearEasing)),
-                label = "splashOrbSpin"
-            )
-            val breathe by orbMotion.animateFloat(
-                initialValue = 0.95f,
-                targetValue = 1.05f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 2800, easing = FastOutSlowInEasing),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "splashOrbBreathe"
-            )
-            Box(modifier = Modifier.size(320.dp), contentAlignment = Alignment.Center) {
-                Image(
-                    painter = painterResource(R.drawable.morrow_orb),
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            rotationZ = spin
-                            scaleX = breathe
-                            scaleY = breathe
-                        }
-                )
-                Image(
-                    painter = painterResource(R.drawable.morrow_orb),
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            rotationZ = -spin * 1.6f
-                            alpha = 0.45f
-                            scaleX = 2f - breathe
-                            scaleY = 2f - breathe
-                        }
-                )
-            }
-            Spacer(Modifier.height(20.dp))
-            Text("Morrow AI", color = MorrowText, fontSize = 34.sp, fontWeight = FontWeight.Medium)
-            Spacer(Modifier.height(10.dp))
-            Text("Your thoughts. Amplified.", color = MorrowMuted, fontSize = 15.sp)
-        }
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = 72.dp)
-                .width(76.dp)
-                .height(3.dp)
-                .clip(CircleShape)
-                .background(Color(0xFF26304B))
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .fillMaxWidth(progress.value)
-                    .background(accent)
-            )
-        }
+        AndroidView(
+            factory = { viewContext ->
+                ImageView(viewContext).apply {
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    setImageResource(R.drawable.morrow_splash_icon_animated)
+                    (drawable as? android.graphics.drawable.Animatable)?.start()
+                }
+            },
+            modifier = Modifier.size(224.dp)
+        )
     }
 }
 
