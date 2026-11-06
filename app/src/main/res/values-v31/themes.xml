@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Animated system splash: plays the moment the app icon is tapped. -->
+    <!-- Android 12+ must show a system launch frame, so keep its icon fully transparent.
+         Morrow's real opening animation is the Compose orb and remains unchanged. -->
     <style name="Theme.Morrow" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/morrow_bg</item>
         <item name="android:windowSplashScreenBackground">@color/morrow_bg</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/morrow_splash_icon_animated</item>
-        <item name="android:windowSplashScreenAnimationDuration">900</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/morrow_splash_empty</item>
+        <item name="android:windowSplashScreenAnimationDuration">0</item>
     </style>
 </resources>

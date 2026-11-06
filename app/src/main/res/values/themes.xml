@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Dark launch theme: no white flash before Compose draws. Android 12+ overrides in values-v31. -->
+    <!-- Keep the pre-Android 12 launch frame plain; the animated Morrow orb is shown by Compose. -->
     <style name="Theme.Morrow" parent="@android:style/Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@drawable/morrow_launch_window</item>
+        <item name="android:windowBackground">@color/morrow_bg</item>
     </style>
 </resources>

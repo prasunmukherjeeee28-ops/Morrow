@@ -49,6 +49,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -90,7 +92,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -187,6 +188,11 @@ import kotlin.math.sin
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
+import com.morrow.ai.ui.MorrowAnimatedIconButton
+import com.morrow.ai.ui.MorrowGlyph
+import com.morrow.ai.ui.MorrowGlyphIcon
+import com.morrow.ai.ui.MorrowIconButton
+import com.morrow.ai.ui.MorrowPressAnimatedIcon
 import kotlin.random.Random
 
 // ---------- Colors ----------
@@ -989,7 +995,7 @@ private fun MorrowMainScreen() {
 
                         Spacer(Modifier.height(20.dp))
                         SidebarAction(
-                            icon = { ComposeIcon(modifier = Modifier.size(22.dp), tint = if (onChatScreen) accent else MorrowMuted) },
+                            icon = { MorrowGlyphIcon(glyph = MorrowGlyph.SPARK, modifier = Modifier.size(22.dp), tint = if (onChatScreen) accent else MorrowMuted) },
                             label = "New Chat",
                             selected = onChatScreen
                         ) {
@@ -998,7 +1004,7 @@ private fun MorrowMainScreen() {
                         }
                         Spacer(Modifier.height(4.dp))
                         SidebarAction(
-                            icon = { Icon(Icons.Outlined.History, contentDescription = null, tint = if (showChats) accent else MorrowMuted, modifier = Modifier.size(22.dp)) },
+                            icon = { MorrowGlyphIcon(glyph = MorrowGlyph.HISTORY, modifier = Modifier.size(22.dp), tint = if (showChats) accent else MorrowMuted) },
                             label = "Chat History",
                             selected = showChats
                         ) {
@@ -1024,7 +1030,7 @@ private fun MorrowMainScreen() {
                         }
                         Spacer(Modifier.height(4.dp))
                         SidebarAction(
-                            icon = { Icon(Icons.Outlined.Settings, contentDescription = null, tint = if (showSettings) accent else MorrowMuted, modifier = Modifier.size(22.dp)) },
+                            icon = { MorrowGlyphIcon(glyph = MorrowGlyph.SETTINGS, modifier = Modifier.size(22.dp), tint = if (showSettings) accent else MorrowMuted) },
                             label = "Settings",
                             selected = showSettings
                         ) {
@@ -1064,7 +1070,7 @@ private fun MorrowMainScreen() {
                         }
                         Spacer(Modifier.height(2.dp))
                         SidebarAction(
-                            icon = { MicIcon(modifier = Modifier.size(22.dp), tint = MorrowMuted) },
+                            icon = { MorrowGlyphIcon(glyph = MorrowGlyph.MIC, modifier = Modifier.size(22.dp), tint = MorrowMuted) },
                             label = "Voice Chat"
                         ) {
                             createNewChat()
@@ -1567,7 +1573,7 @@ private fun TopBar(
             .padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onBackClick) {
+        MorrowAnimatedIconButton(onClick = onBackClick) {
             BackIcon(tint = MorrowText)
         }
         MorrowOrb(Modifier.size(38.dp))
@@ -1588,7 +1594,7 @@ private fun TopBar(
             )
         }
         Box {
-            IconButton(onClick = { menuOpen = true }) {
+            MorrowAnimatedIconButton(onClick = { menuOpen = true }) {
                 Icon(Icons.Outlined.MoreVert, contentDescription = "More options", tint = MorrowText)
             }
             DropdownMenu(
@@ -1633,7 +1639,7 @@ private fun ExploreScreen(
             modifier = Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) { BackIcon(tint = accent) }
+            MorrowAnimatedIconButton(onClick = onBack) { BackIcon(tint = accent) }
             Text("Explore", color = MorrowText, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
         }
         Text(
@@ -1687,7 +1693,7 @@ private fun LibraryScreen(
             modifier = Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) { BackIcon(tint = accent) }
+            MorrowAnimatedIconButton(onClick = onBack) { BackIcon(tint = accent) }
             Text("Library", color = MorrowText, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
         }
         if (chats.isEmpty()) {
@@ -1764,7 +1770,7 @@ private fun HomeScreen(
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onMenuClick, modifier = Modifier.size(42.dp)) {
+            MorrowAnimatedIconButton(onClick = onMenuClick, modifier = Modifier.size(42.dp)) {
                 MenuIcon(tint = MorrowText)
             }
             Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
@@ -1776,7 +1782,7 @@ private fun HomeScreen(
                     letterSpacing = 0.2.sp
                 )
             }
-            IconButton(onClick = onAskAnything, modifier = Modifier.size(42.dp)) {
+            MorrowAnimatedIconButton(onClick = onAskAnything, modifier = Modifier.size(42.dp)) {
                 MorrowOrb(Modifier.size(32.dp))
             }
         }
@@ -2062,9 +2068,9 @@ private fun RecentChatsScreen(
             modifier = Modifier.fillMaxWidth().statusBarsPadding().height(62.dp).padding(start = 10.dp, end = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBackHome, modifier = Modifier.size(44.dp)) { BackIcon(tint = MorrowText) }
+            MorrowAnimatedIconButton(onClick = onBackHome, modifier = Modifier.size(44.dp)) { BackIcon(tint = MorrowText) }
             Text("Chat History", color = MorrowText, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            IconButton(onClick = { category = if (category == "All") "General" else "All" }, modifier = Modifier.size(40.dp)) {
+            MorrowAnimatedIconButton(onClick = { category = if (category == "All") "General" else "All" }, modifier = Modifier.size(40.dp)) {
                 Icon(Icons.Outlined.FilterList, contentDescription = "Toggle chat categories", tint = MorrowMuted, modifier = Modifier.size(22.dp))
             }
         }
@@ -2156,7 +2162,7 @@ private fun RecentChatsScreen(
                             )
                         }
                         Box {
-                            IconButton(onClick = { menuChatId = chat.id }, modifier = Modifier.size(38.dp)) {
+                            MorrowAnimatedIconButton(onClick = { menuChatId = chat.id }, modifier = Modifier.size(38.dp)) {
                                 Icon(Icons.Outlined.MoreVert, contentDescription = "Chat options", tint = MorrowMuted, modifier = Modifier.size(22.dp))
                             }
                             DropdownMenu(
@@ -2988,7 +2994,7 @@ private fun ToolsAndAttachmentsContent(
                 modifier = Modifier.weight(1f)
             )
             if (onClose != null) {
-                IconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
+                MorrowAnimatedIconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
                     CloseIcon(modifier = Modifier.size(21.dp), tint = MorrowMuted)
                 }
             }
@@ -3454,17 +3460,16 @@ private fun MorrowComposer(
                 .padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(
+            MorrowMorrowAnimatedIconButton(
+                glyph = MorrowGlyph.PLUS,
                 onClick = onToggleAttachments,
-                modifier = Modifier.size(40.dp)
-            ) {
-                PlusIcon(
-                    modifier = Modifier
-                        .size(20.dp)
-                        .graphicsLayer { rotationZ = plusRotation },
-                    tint = accent
-                )
-            }
+                modifier = Modifier.size(40.dp),
+                size = 40.dp,
+                iconSize = 20.dp,
+                iconModifier = Modifier.graphicsLayer { rotationZ = plusRotation },
+                tint = accent,
+                contentDescription = "Add attachment"
+            )
 
             BasicTextField(
                 value = inputText,
@@ -3496,41 +3501,46 @@ private fun MorrowComposer(
             )
 
             if (voice.available) {
-                IconButton(
+                MorrowMorrowAnimatedIconButton(
+                    glyph = MorrowGlyph.MIC,
                     onClick = voice.toggle,
                     enabled = !isLoading,
                     modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
-                        .background(if (voice.listening) MorrowDanger.copy(alpha = 0.18f) else Color.Transparent)
-                ) {
-                    MicIcon(
-                        tint = if (voice.listening) MorrowDanger else MorrowMuted,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
+                        .background(if (voice.listening) MorrowDanger.copy(alpha = 0.18f) else Color.Transparent),
+                    size = 40.dp,
+                    iconSize = 20.dp,
+                    tint = if (voice.listening) MorrowDanger else MorrowMuted,
+                    contentDescription = if (voice.listening) "Stop voice input" else "Start voice input"
+                )
             }
 
             Spacer(Modifier.width(4.dp))
-            IconButton(
-                onClick = if (busy) onStop else onSend,
-                enabled = busy || canSend,
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(sendTint)
-            ) {
-                if (busy) {
-                    StopSquareIcon(
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp)
-                    )
-                } else {
-                    ArrowUpIcon(
-                        tint = if (canSend) Color.White else MorrowMuted,
-                        modifier = Modifier.size(20.dp)
-                    )
+            if (busy) {
+                MorrowAnimatedMorrowAnimatedIconButton(
+                    onClick = onStop,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(sendTint)
+                ) {
+                    StopSquareIcon(tint = Color.White, modifier = Modifier.size(16.dp))
                 }
+            } else {
+                MorrowMorrowAnimatedIconButton(
+                    glyph = MorrowGlyph.SEND,
+                    onClick = onSend,
+                    enabled = canSend,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(sendTint),
+                    size = 40.dp,
+                    iconSize = 20.dp,
+                    tint = if (canSend) Color.White else MorrowMuted,
+                    contentDescription = "Send message"
+                )
             }
         }
     }
@@ -3546,15 +3556,19 @@ private fun SettingsNavRow(
     danger: Boolean = false,
     onClick: () -> Unit
 ) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 2.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, contentDescription = null, tint = if (danger) MorrowDanger else MorrowMuted, modifier = Modifier.size(22.dp))
+        MorrowPressAnimatedIcon(pressed = pressed, modifier = Modifier.size(22.dp)) {
+            Icon(icon, contentDescription = null, tint = if (danger) MorrowDanger else MorrowMuted, modifier = Modifier.size(22.dp))
+        }
         Spacer(Modifier.width(14.dp))
         Text(
             label,
@@ -3597,7 +3611,7 @@ private fun SettingsScreen(
                 .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
+            MorrowAnimatedIconButton(onClick = onBack) {
                 BackIcon(tint = MorrowText)
             }
             Text("Settings", color = MorrowText, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
@@ -3672,7 +3686,7 @@ private fun AppearanceScreen(
                 .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
+            MorrowAnimatedIconButton(onClick = onBack) {
                 BackIcon(tint = MorrowText)
             }
             Text("Appearance", color = MorrowText, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
@@ -3923,7 +3937,7 @@ private fun MdCodeBlock(language: String, code: String) {
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f)
             )
-            IconButton(
+            MorrowAnimatedIconButton(
                 onClick = {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("Morrow code", code))
@@ -4556,6 +4570,8 @@ private fun SidebarAction(
     onClick: () -> Unit
 ) {
     val accent = LocalMorrowAccent.current
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -4573,11 +4589,11 @@ private fun SidebarAction(
                 color = if (selected) accent.copy(alpha = 0.72f) else Color.Transparent,
                 shape = RoundedCornerShape(14.dp)
             )
-            .clickable(onClick = onClick)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(modifier = Modifier.size(22.dp), contentAlignment = Alignment.Center) {
+        MorrowPressAnimatedIcon(pressed = pressed, modifier = Modifier.size(22.dp)) {
             icon()
         }
         Spacer(Modifier.width(13.dp))
