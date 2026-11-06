@@ -639,7 +639,7 @@ private fun MorrowMainScreen() {
     var showLibrary by remember { mutableStateOf(false) }
     var showAppearance by remember { mutableStateOf(false) }
     var showPrivacyDialog by remember { mutableStateOf(false) }
-    var showSplash by remember { mutableStateOf(!morrowSplashShown) }
+    var showSplash by remember { mutableStateOf(false) }
     var showProDialog by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
     var chatActionsId by remember { mutableStateOf<String?>(null) }
