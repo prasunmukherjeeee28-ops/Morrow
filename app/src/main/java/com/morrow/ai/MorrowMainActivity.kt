@@ -3460,7 +3460,7 @@ private fun MorrowComposer(
                 .padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            MorrowMorrowAnimatedIconButton(
+            MorrowIconButton(
                 glyph = MorrowGlyph.PLUS,
                 onClick = onToggleAttachments,
                 modifier = Modifier.size(40.dp),
@@ -3501,7 +3501,7 @@ private fun MorrowComposer(
             )
 
             if (voice.available) {
-                MorrowMorrowAnimatedIconButton(
+                MorrowIconButton(
                     glyph = MorrowGlyph.MIC,
                     onClick = voice.toggle,
                     enabled = !isLoading,
@@ -3528,7 +3528,7 @@ private fun MorrowComposer(
                     StopSquareIcon(tint = Color.White, modifier = Modifier.size(16.dp))
                 }
             } else {
-                MorrowMorrowAnimatedIconButton(
+                MorrowIconButton(
                     glyph = MorrowGlyph.SEND,
                     onClick = onSend,
                     enabled = canSend,
