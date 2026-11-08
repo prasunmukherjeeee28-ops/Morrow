@@ -90,7 +90,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
+import androidx.compose.material3.Icon as MaterialIcon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.MaterialTheme
@@ -142,6 +142,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
@@ -191,6 +192,8 @@ import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import com.morrow.ai.ui.MorrowAnimatedIconButton
+import com.morrow.ai.ui.MorrowArtwork
+import com.morrow.ai.ui.MorrowArtworkIcon
 import com.morrow.ai.ui.MorrowGlyph
 import com.morrow.ai.ui.MorrowGlyphIcon
 import com.morrow.ai.ui.MorrowIconButton
@@ -4804,5 +4807,80 @@ private suspend fun fetchMorrowReply(
         "I couldn't connect to Morrow right now. ${error.message ?: "Please try again."}"
     } finally {
         connection?.disconnect()
+    }
+}
+
+
+/**
+ * Morrow-wide icon adapter. Material ImageVector references are mapped to custom
+ * layered image assets so the UI uses one coherent illustrated art direction.
+ */
+@Composable
+private fun Icon(
+    imageVector: ImageVector,
+    contentDescription: String? = null,
+    modifier: Modifier = Modifier,
+    tint: Color = Color.Unspecified
+) {
+    val artwork = when (imageVector) {
+        Icons.Outlined.ChevronRight -> MorrowArtwork.CHEVRON
+        Icons.Outlined.ChatBubbleOutline -> MorrowArtwork.CHAT
+        Icons.Outlined.Image -> MorrowArtwork.IMAGE
+        Icons.Outlined.Code -> MorrowArtwork.CODE
+        Icons.Outlined.BookmarkBorder -> MorrowArtwork.BOOKMARK
+        Icons.Outlined.Widgets -> MorrowArtwork.WIDGETS
+        Icons.Outlined.MoreVert, Icons.Outlined.MoreHoriz -> MorrowArtwork.MORE
+        Icons.Outlined.AutoAwesome -> MorrowArtwork.SPARK
+        Icons.Outlined.ArrowForward -> MorrowArtwork.FORWARD
+        Icons.Outlined.School -> MorrowArtwork.SCHOOL
+        Icons.Outlined.Edit -> MorrowArtwork.EDIT
+        Icons.Outlined.DeleteOutline -> MorrowArtwork.DELETE
+        Icons.Outlined.Search -> MorrowArtwork.SEARCH
+        Icons.Outlined.Public, Icons.Outlined.Language -> MorrowArtwork.GLOBE
+        Icons.Outlined.Timer -> MorrowArtwork.TIMER
+        Icons.Outlined.Home -> MorrowArtwork.HOME
+        Icons.Outlined.Settings -> MorrowArtwork.SETTINGS
+        Icons.Outlined.FilterList -> MorrowArtwork.FILTER
+        Icons.Outlined.SelectAll -> MorrowArtwork.CHECK
+        Icons.Outlined.Palette -> MorrowArtwork.PALETTE
+        Icons.Outlined.TextFields -> MorrowArtwork.TEXT_FIELDS
+        Icons.Outlined.Security -> MorrowArtwork.SECURITY
+        Icons.Outlined.Check -> MorrowArtwork.CHECK
+        Icons.Outlined.Lightbulb -> MorrowArtwork.LIGHTBULB
+        Icons.Outlined.WarningAmber -> MorrowArtwork.WARNING
+        Icons.Outlined.Info -> MorrowArtwork.INFO
+        Icons.Outlined.Menu -> MorrowArtwork.MENU
+        Icons.Outlined.ArrowBack -> MorrowArtwork.BACK
+        Icons.Outlined.Close -> MorrowArtwork.CLOSE
+        Icons.Outlined.Add -> MorrowArtwork.PLUS
+        Icons.Outlined.Tune -> MorrowArtwork.TUNE
+        Icons.Outlined.MicNone -> MorrowArtwork.MIC
+        Icons.Outlined.ArrowUpward -> MorrowArtwork.SEND
+        Icons.Outlined.Stop -> MorrowArtwork.STOP
+        Icons.Outlined.ContentCopy -> MorrowArtwork.COPY
+        Icons.Outlined.Share -> MorrowArtwork.SHARE
+        Icons.Outlined.VolumeUp -> MorrowArtwork.SPEAKER
+        Icons.Outlined.ThumbDownOffAlt -> MorrowArtwork.THUMB_DOWN
+        Icons.Outlined.ThumbUpOffAlt -> MorrowArtwork.THUMB_UP
+        Icons.Outlined.Refresh -> MorrowArtwork.REFRESH
+        Icons.Outlined.InsertDriveFile -> MorrowArtwork.FILE
+        Icons.Outlined.PhotoCamera -> MorrowArtwork.CAMERA
+        else -> null
+    }
+
+    if (artwork != null) {
+        MorrowArtworkIcon(
+            artwork = artwork,
+            modifier = modifier,
+            tint = tint,
+            contentDescription = contentDescription
+        )
+    } else {
+        MaterialIcon(
+            imageVector = imageVector,
+            contentDescription = contentDescription,
+            modifier = modifier,
+            tint = tint
+        )
     }
 }
