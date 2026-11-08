@@ -40,7 +40,7 @@ enum class MorrowGlyph { SPARK, SEND, MIC, SETTINGS, HISTORY, PLUS, CLOSE }
 fun MorrowGlyphIcon(
     glyph: MorrowGlyph,
     modifier: Modifier = Modifier.size(22.dp),
-    @Suppress("UNUSED_PARAMETER") tint: Color = Color(0xFFB49AFF)
+    tint: Color = Color(0xFFB49AFF)
 ) {
     val artwork = when (glyph) {
         MorrowGlyph.SPARK -> R.drawable.morrow_ic_spark
@@ -56,7 +56,8 @@ fun MorrowGlyphIcon(
         painter = painterResource(id = artwork),
         contentDescription = null,
         modifier = modifier,
-        contentScale = ContentScale.Fit
+        contentScale = ContentScale.Fit,
+        colorFilter = ColorFilter.tint(tint, BlendMode.Modulate)
     )
 }
 
