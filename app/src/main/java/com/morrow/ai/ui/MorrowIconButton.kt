@@ -11,6 +11,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -55,7 +56,7 @@ fun MorrowGlyphIcon(
     Image(
         painter = painterResource(id = artwork),
         contentDescription = null,
-        modifier = modifier,
+        modifier = modifier.sizeIn(maxWidth = 24.dp, maxHeight = 24.dp),
         contentScale = ContentScale.Fit,
         colorFilter = ColorFilter.tint(tint, BlendMode.Modulate)
     )
@@ -125,7 +126,7 @@ fun MorrowArtworkIcon(
     Image(
         painter = painterResource(id = resource),
         contentDescription = contentDescription,
-        modifier = modifier,
+        modifier = modifier.sizeIn(maxWidth = 24.dp, maxHeight = 24.dp),
         contentScale = ContentScale.Fit,
         colorFilter = if (tint == Color.Unspecified) null else ColorFilter.tint(tint, BlendMode.Modulate)
     )
