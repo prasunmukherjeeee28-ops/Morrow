@@ -86,7 +86,8 @@ internal fun MorrowReactScreen(
                         view: WebView?,
                         request: WebResourceRequest?,
                     ): Boolean {
-                        return request.url.scheme != "https" || request.url.host != "appassets.androidplatform.net"
+                        val url = request?.url ?: return true
+                        return url.scheme != "https" || url.host != "appassets.androidplatform.net"
                     }
 
                     override fun onRenderProcessGone(
