@@ -8,6 +8,7 @@ import {
   Compass,
   Copy,
   Menu,
+  Plus,
   RefreshCw,
   Sparkles,
 } from 'lucide-react';
@@ -37,6 +38,7 @@ declare global {
   interface Window {
     MorrowBridge?: {
       openClassic: () => void;
+      sendMessage?: (requestId: string, message: string) => void;
     };
   }
 }
@@ -146,33 +148,63 @@ export default function App() {
     })));
   }
 
+  async function getMorrowReply(prompt: string): Promise<string> {
+    if (window.MorrowBridge?.sendMessage) {
+      return new Promise((resolve, reject) => {
+        const requestId = makeId();
+        const cleanup = () => {
+          window.clearTimeout(timeoutId);
+          window.removeEventListener('morrow-native-reply', handleReply);
+        };
+        const handleReply = (event: Event) => {
+          const detail = (event as CustomEvent<{ requestId: string; reply?: string; error?: string }>).detail;
+          if (detail?.requestId !== requestId) return;
+          cleanup();
+          if (detail.error) reject(new Error(detail.error));
+          else if (detail.reply) resolve(detail.reply);
+          else reject(new Error('Morrow returned an empty response.'));
+        };
+        const timeoutId = window.setTimeout(() => {
+          cleanup();
+          reject(new Error('The request timed out. Please try again.'));
+        }, 70000);
+        window.addEventListener('morrow-native-reply', handleReply);
+        try {
+          window.MorrowBridge?.sendMessage?.(requestId, prompt);
+        } catch (error) {
+          cleanup();
+          reject(error instanceof Error ? error : new Error('Could not start the native request.'));
+        }
+      });
+    }
+
+    const response = await fetch(CHAT_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: prompt }),
+    });
+    const raw = await response.text();
+    let data: Record<string, unknown> = {};
+    try {
+      data = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      if (!response.ok) throw new Error(raw || 'The AI service returned an error.');
+      return raw || 'Morrow did not return a response.';
+    }
+    if (!response.ok) {
+      const reason = data.detail ?? data.error ?? data.message;
+      throw new Error(typeof reason === 'string' ? reason : 'The AI service could not complete the request.');
+    }
+    const choice = data.choices as Array<{ message?: { content?: string } }> | undefined;
+    const answer = data.reply ?? data.response ?? data.message ?? choice?.[0]?.message?.content;
+    return typeof answer === 'string' ? answer : 'Morrow did not return a readable response.';
+  }
+
   async function requestAnswer(conversationId: string, prompt: string) {
     setBusy(true);
     try {
-      const response = await fetch(CHAT_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: prompt }),
-      });
-      const raw = await response.text();
-      let data: Record<string, unknown> = {};
-      try {
-        data = JSON.parse(raw) as Record<string, unknown>;
-      } catch {
-        if (!response.ok) throw new Error(raw || 'The AI service returned an error.');
-        appendAssistantMessage(conversationId, raw || 'Morrow did not return a response.');
-        return;
-      }
-      if (!response.ok) {
-        const reason = data.detail ?? data.error ?? data.message;
-        throw new Error(typeof reason === 'string' ? reason : 'The AI service could not complete the request.');
-      }
-      const choice = data.choices as Array<{ message?: { content?: string } }> | undefined;
-      const answer = data.reply ?? data.response ?? data.message ?? choice?.[0]?.message?.content;
-      appendAssistantMessage(
-        conversationId,
-        typeof answer === 'string' ? answer : 'Morrow did not return a readable response.',
-      );
+      const answer = await getMorrowReply(prompt);
+      appendAssistantMessage(conversationId, answer);
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'Unknown connection error.';
       appendAssistantMessage(
@@ -264,7 +296,7 @@ export default function App() {
           <div className="topbar-right">
             <div className="engine-pill"><span /> MORROW CORE</div>
             <button className="icon-button topbar-new" onClick={startNewChat} aria-label="Start a new conversation" title="New conversation">
-              <PlusIcon />
+              <Plus size={18} strokeWidth={1.8} />
             </button>
           </div>
         </header>
@@ -375,6 +407,3 @@ export default function App() {
   );
 }
 
-function PlusIcon() {
-  return <span className="plus-glyph" aria-hidden="true">+</span>;
-}
