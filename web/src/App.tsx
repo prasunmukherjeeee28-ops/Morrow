@@ -1,0 +1,18 @@
+import { useState } from 'react';
+import { Canvas } from '@react-three/fiber';
+import { Float, MeshDistortMaterial, Sphere } from '@react-three/drei';
+import { motion } from 'framer-motion';
+
+type Msg={role:'user'|'assistant';text:string};
+function Core(){return <Float speed={1.35} rotationIntensity={.45} floatIntensity={.65}><Sphere args={[1.18,96,96]}><MeshDistortMaterial color="#8b5cf6" roughness={.12} metalness={.72} distort={.32} speed={2.1}/></Sphere></Float>}
+export default function App(){
+ const [messages,setMessages]=useState<Msg[]>([]);const [input,setInput]=useState('');const [busy,setBusy]=useState(false);
+ async function send(){const q=input.trim();if(!q||busy)return;setInput('');setMessages(m=>[...m,{role:'user',text:q}]);setBusy(true);
+ try{const res=await fetch('https://morrow-backend.prasunmukherjeeee28.workers.dev/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:q,messages:[...messages,{role:'user',content:q}]})});const data=await res.json();const answer=data.reply??data.response??data.message??data.choices?.[0]?.message?.content??JSON.stringify(data);setMessages(m=>[...m,{role:'assistant',text:String(answer)}]);}
+ catch{setMessages(m=>[...m,{role:'assistant',text:'Could not reach Morrow right now. Check the backend connection and try again.'}]);}finally{setBusy(false)}}
+ return <div className="app"><aside className="rail"><div className="brand">m<span>✦</span></div><button className="railBtn active" title="Chat">✳</button><button className="railBtn" title="Explore">⌘</button><button className="railBtn" title="Settings">⚙</button><div className="avatar">P</div></aside>
+ <main><header><div className="wordmark">morrow <span>PREVIEW</span></div><div className="status"><i/> AI CORE ONLINE</div></header>
+ <section className="stage"><div className="orb"><Canvas camera={{position:[0,0,4.2]}} dpr={[1,1.5]}><ambientLight intensity={1.4}/><pointLight position={[3,2,4]} intensity={8} color="#bba4ff"/><pointLight position={[-3,-2,-3]} intensity={4} color="#4338ca"/><Core/></Canvas></div><div className="hero"><motion.div initial={{opacity:0,y:14}} animate={{opacity:1,y:0}} transition={{duration:.7}}><p className="eyebrow">YOUR INTELLIGENCE, IN MOTION</p><h1>Think beyond<br/><em>the ordinary.</em></h1><p className="sub">A quieter kind of powerful.</p></motion.div></div></section>
+ <section className="chatArea">{messages.length===0?<div className="suggestions"><button onClick={()=>setInput('Explain something complex simply')}>✧ Explain something complex</button><button onClick={()=>setInput('Help me build a project')}>⌘ Build a project</button><button onClick={()=>setInput('Give me creative ideas')}>◈ Explore ideas</button></div>:<div className="messages">{messages.map((m,i)=><div className={'msg '+m.role} key={i}><span className="who">{m.role==='user'?'YOU':'MORROW'}</span><p>{m.text}</p></div>)}{busy&&<div className="msg assistant"><span className="who">MORROW</span><p className="dots">Thinking<span>···</span></p></div>}</div>}
+ <div className="composer"><textarea value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}}} placeholder="Ask Morrow anything…" rows={1}/><button className="send" onClick={send} disabled={!input.trim()||busy}>↗</button></div><div className="fineprint">Morrow can make mistakes. Verify important information.</div></section></main></div>
+}
