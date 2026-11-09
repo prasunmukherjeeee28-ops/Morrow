@@ -2757,17 +2757,31 @@ private fun ActionIcon(
     content: @Composable () -> Unit
 ) {
     val shape = RoundedCornerShape(11.dp)
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) .90f else 1f,
+        animationSpec = tween(120, easing = FastOutSlowInEasing),
+        label = "actionIconScale"
+    )
+    val glow by animateFloatAsState(
+        targetValue = if (pressed) .12f else 0f,
+        animationSpec = tween(120),
+        label = "actionIconGlow"
+    )
     Box(
         modifier = Modifier
-            .size(34.dp)
+            .size(36.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(shape)
             .background(MorrowSurface)
             .border(1.dp, MorrowBorder, shape)
             .semantics { contentDescription = label }
-            .clickable(onClick = onClick),
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        content()
+        if (glow > 0f) Box(Modifier.matchParentSize().background(MorrowAccent.copy(alpha = glow), shape))
+        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { content() }
     }
 }
 
