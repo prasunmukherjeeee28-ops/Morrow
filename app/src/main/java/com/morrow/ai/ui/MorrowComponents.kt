@@ -125,9 +125,7 @@ fun MorrowCard(
 ) {
     val base = modifier
         .fillMaxWidth()
-        .clip(MorrowRadiusMedium)
-        .background(MorrowSurface)
-        .border(1.dp, MorrowBorder, MorrowRadiusMedium)
+        .glassSurface(MorrowRadiusMedium)
     val clickableBase = if (onClick != null) base.clickable(onClick = onClick) else base
 
     Column(
@@ -145,11 +143,11 @@ fun MorrowChip(
     modifier: Modifier = Modifier
 ) {
     val fill by animateColorAsState(
-        targetValue = if (selected) MorrowAccent.copy(alpha = 0.22f) else MorrowChipFill,
+        targetValue = if (selected) MorrowAccent.copy(alpha = 0.26f) else MorrowChipFill,
         label = "chipFill"
     )
     val stroke by animateColorAsState(
-        targetValue = if (selected) MorrowAccent else MorrowChipBorder,
+        targetValue = if (selected) MorrowAccent.copy(alpha = 0.8f) else GlassEdgeSoft,
         label = "chipStroke"
     )
 
@@ -232,9 +230,7 @@ fun MorrowTextField(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(MorrowRadiusPill)
-            .background(MorrowSurface)
-            .border(1.dp, MorrowBorder, MorrowRadiusPill)
+            .glassSurface(MorrowRadiusPill)
             .padding(horizontal = 18.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
