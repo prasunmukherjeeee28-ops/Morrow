@@ -66,6 +66,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -645,7 +646,6 @@ private fun MorrowMainScreen() {
     var showAppearance by remember { mutableStateOf(false) }
     var showPrivacyDialog by remember { mutableStateOf(false) }
     var showSplash by remember { mutableStateOf(!morrowSplashShown) }
-    var showReactInterface by remember { mutableStateOf(true) }
     var showProDialog by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
     var chatActionsId by remember { mutableStateOf<String?>(null) }
@@ -1043,14 +1043,6 @@ private fun MorrowMainScreen() {
                             navigateHomeTab("Settings")
                             scope.launch { drawerState.close() }
                         }
-                        Spacer(Modifier.height(4.dp))
-                        SidebarAction(
-                            icon = { MorrowGlyphIcon(glyph = MorrowGlyph.SPARK, modifier = Modifier.size(22.dp), tint = accent) },
-                            label = "New React interface"
-                        ) {
-                            showReactInterface = true
-                            scope.launch { drawerState.close() }
-                        }
 
                         Text(
                             "Quick Actions",
@@ -1129,11 +1121,6 @@ private fun MorrowMainScreen() {
                     morrowSplashShown = true
                     showSplash = false
                 })
-            } else if (showReactInterface) {
-                MorrowReactScreen(
-                    modifier = Modifier.fillMaxSize(),
-                    onOpenClassic = { showReactInterface = false }
-                )
             } else if (showSettings && showAppearance) {
                 AppearanceScreen(
                     landscapeOn = landscapeOn,
@@ -2794,7 +2781,7 @@ private fun ActionIcon(
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        if (glow > 0f) Box(Modifier.matchParentSize().background(LocalMorrowAccent.current.copy(alpha = glow), shape))
+        if (glow > 0f) Box(Modifier.matchParentSize().background(MorrowAccent.copy(alpha = glow), shape))
         Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { content() }
     }
 }
