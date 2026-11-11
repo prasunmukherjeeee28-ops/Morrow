@@ -66,7 +66,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -2781,7 +2780,7 @@ private fun ActionIcon(
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        if (glow > 0f) Box(Modifier.matchParentSize().background(MorrowAccent.copy(alpha = glow), shape))
+        if (glow > 0f) Box(Modifier.fillMaxSize().background(LocalMorrowAccent.current.copy(alpha = glow), shape))
         Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { content() }
     }
 }
